@@ -1,0 +1,153 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+:root {
+  --bg: #eef7ff;
+  --paper: #f8fcff;
+  --ink: #09233f;
+  --muted: #54708c;
+  --line: #c9dfef;
+  --lime: #6fe7ff;
+  --orange: #2367ff;
+  --blue-deep: #082a62;
+  --blue-mid: #1676d2;
+  --radius: 14px;
+}
+
+body {
+  background:
+    linear-gradient(rgba(22, 118, 210, .055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(22, 118, 210, .055) 1px, transparent 1px),
+    linear-gradient(135deg, #f8fcff 0%, #e5f2ff 48%, #f3fbff 100%);
+  background-size: 32px 32px, 32px 32px, auto;
+  color: var(--ink);
+  font-family: 'Space Grotesk', sans-serif;
+}
+
+header {
+  background: linear-gradient(90deg, rgba(224, 241, 255, .94), rgba(248, 252, 255, .88) 55%, rgba(218, 237, 255, .94));
+  border-bottom-color: rgba(159, 202, 235, .78);
+}
+
+.brand-badge {
+  background: var(--orange);
+  color: white;
+  box-shadow: 0 0 0 5px rgba(35, 103, 255, .12);
+}
+
+.company-logo {
+  width: 154px;
+  height: 58px;
+  object-fit: contain;
+  object-position: left center;
+}
+
+.company-name {
+  max-width: 155px;
+  color: var(--blue-deep);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+.nav-links a:hover { color: var(--orange); }
+
+.chip {
+  background: rgba(255, 255, 255, .62);
+  border-color: var(--line);
+  color: var(--muted);
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  letter-spacing: .2px;
+}
+
+.h1 {
+  color: var(--blue-deep);
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 700;
+}
+
+.lead, .muted { color: var(--muted); }
+
+.btn {
+  border-radius: 8px;
+  box-shadow: 0 8px 18px rgba(8, 42, 98, .08);
+}
+
+.btn-primary {
+  background: var(--lime);
+  color: var(--blue-deep);
+}
+
+.btn-accent {
+  background: var(--orange);
+  color: white;
+}
+
+.btn-ghost {
+  background: rgba(255, 255, 255, .55);
+  border-color: var(--line);
+  color: var(--blue-deep);
+}
+
+.hero-card, .card, .step, .form-wrap, .faq details {
+  border-color: var(--line);
+  box-shadow: 0 14px 34px rgba(20, 83, 136, .09);
+}
+
+.hero-card, .form-wrap, .card, .step, .faq details {
+  background: rgba(255, 255, 255, .82);
+}
+
+.hero-media {
+  background: linear-gradient(145deg, rgba(35, 103, 255, .3), transparent 62%),
+              linear-gradient(35deg, rgba(111, 231, 255, .32), transparent 58%);
+}
+
+.hero-badge {
+  background: var(--lime);
+  color: var(--blue-deep);
+  border-radius: 8px;
+  font-family: 'DM Mono', monospace;
+}
+
+.section-title, .step .num { color: var(--orange); }
+
+.metrics {
+  background: linear-gradient(120deg, var(--blue-deep), #0e5fb5);
+  box-shadow: 0 16px 30px rgba(8, 42, 98, .18);
+}
+
+.metric small { color: rgba(248, 252, 255, .78); }
+
+input, select, textarea {
+  background: rgba(248, 252, 255, .9);
+  border-color: var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  font-family: 'Space Grotesk', sans-serif;
+}
+
+input:focus, select:focus, textarea:focus {
+  border-color: var(--orange);
+  box-shadow: 0 0 0 3px rgba(35, 103, 255, .12);
+}
+
+button:disabled {
+  cursor: wait;
+  opacity: .62;
+  transform: none;
+}
+
+footer { color: var(--muted); }
+
+@media (max-width: 900px) {
+  .hero { padding-top: 38px; }
+}
+
+@media (max-width: 600px) {
+  .nav { height: auto; min-height: 74px; padding: 8px 0; }
+  .company-logo { width: 82px; height: 45px; }
+  .company-name { max-width: 70px; font-size: 10px; }
+  .nav > div:last-child { gap: 6px !important; }
+  .nav > div:last-child .btn { padding: 10px 9px; font-size: 12px; }
+}

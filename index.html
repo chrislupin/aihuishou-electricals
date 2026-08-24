@@ -1,0 +1,500 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Aihuishou Electricals | Kenya's e-waste recovery partner</title>
+    <meta name="description" content="Aihuishou Electricals collects, recovers and responsibly recycles unwanted electronics across Kenya for homes, businesses and institutions." />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <meta name="theme-color" content="#082a62" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Aihuishou Electricals | Responsible e-waste recovery in Kenya" />
+    <meta property="og:description" content="Collect, recover and responsibly recycle unwanted electronics across Kenya." />
+    <meta property="og:image" content="images/electronic-waste.avif" />
+    <meta property="og:locale" content="en_KE" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Aihuishou Electricals | Responsible e-waste recovery in Kenya" />
+    <meta name="twitter:description" content="Collect, recover and responsibly recycle unwanted electronics across Kenya." />
+    <meta name="twitter:image" content="images/electronic-waste.avif" />
+    <link rel="stylesheet" href="styles.css" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "RecyclingCenter",
+        "name": "Aihuishou Electricals Limited",
+        "description": "Electronics collection, recovery and responsible e-waste recycling across Kenya.",
+        "url": "/",
+        "telephone": "+254716333399",
+        "email": "aihuishoulimited@gmail.com",
+        "areaServed": { "@type": "Country", "name": "Kenya" }
+      }
+    </script>
+
+    <style>
+      :root{
+        --bg:#e5f2ff;
+        --ink:#09233f;
+        --muted:#54708c;
+        --line:#c9dfef;
+        --lime:#6fe7ff;
+        --orange:#2367ff;
+        --paper:#f8fcff;
+        --radius:14px;
+      }
+      *{box-sizing:border-box}
+      html{scroll-behavior:smooth}
+      body{
+        margin:0;
+        background:
+          linear-gradient(rgba(22,118,210,.055) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(22,118,210,.055) 1px, transparent 1px),
+          linear-gradient(135deg, #d8edff 0%, #b9dcff 48%, #e6f6ff 100%);
+        background-size:32px 32px, 32px 32px, auto;
+        color:var(--ink);
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+        line-height:1.5;
+      }
+      a{color:inherit;text-decoration:none}
+      img{max-width:100%;display:block}
+      .container{max-width:1100px;margin:0 auto;padding:0 18px}
+      .btn{
+        display:inline-flex;align-items:center;justify-content:center;gap:10px;
+        padding:12px 18px;border-radius:12px;font-weight:700;border:1px solid transparent;
+        transition:transform .15s ease, background .15s ease, border-color .15s ease;
+        white-space:nowrap;
+      }
+      .btn:hover{transform:translateY(-1px)}
+      .btn-primary{background:var(--lime); color:var(--ink)}
+      .btn-ghost{background:transparent;border-color:var(--line)}
+      .btn-accent{background:var(--orange); color:var(--paper)}
+      .chip{
+        display:inline-flex;align-items:center;gap:8px;
+        border:1px solid var(--line); padding:8px 12px; border-radius:999px;
+        color:var(--muted); font-weight:700; font-size:13px;
+      }
+      header{
+        position:sticky;top:0;z-index:50;background:rgba(248,252,255,.88);
+        backdrop-filter:saturate(180%) blur(10px);
+        border-bottom:1px solid rgba(132,185,225,.65);
+      }
+      .nav{
+        height:74px;display:flex;align-items:center;justify-content:space-between;gap:18px;
+      }
+      .brand{display:flex;align-items:center;gap:10px;font-weight:900;letter-spacing:-.3px}
+      .brand-badge{
+        width:34px;height:34px;border-radius:50%;
+        background:var(--lime);display:grid;place-items:center;
+        font-weight:900;
+      }
+      .nav-links{
+        display:flex;gap:18px;align-items:center;flex-wrap:wrap;
+      }
+      .nav-links a{font-weight:800;font-size:13px;color:var(--ink)}
+      .nav-links a:hover{color:var(--orange)}
+      .hero{padding:56px 0 26px}
+      .hero-grid{display:grid;grid-template-columns:1.15fr .85fr;gap:26px;align-items:center}
+      .h1{
+        font-size:clamp(36px, 5vw, 60px);
+        letter-spacing:-3px;margin:12px 0 12px;line-height:.95;
+      }
+      .lead{color:var(--muted);font-size:16px;max-width:520px;margin:0}
+      .hero-actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:22px}
+      .hero-card{
+        border:1px solid var(--line);border-radius:var(--radius);
+        overflow:hidden;background:rgba(255,255,255,.82);
+        box-shadow:0 10px 30px rgba(0,0,0,.05);
+      }
+      .hero-media{
+        position:relative;
+        height:360px;
+        background:linear-gradient(145deg, rgba(35,103,255,.3), transparent 60%),
+             radial-gradient(circle at 20% 30%, rgba(111,231,255,.35), transparent 55%);
+      }
+      .hero-media img{
+        width:100%;height:100%;object-fit:cover;filter:saturate(.9) contrast(1.02);
+      }
+      .hero-media:after{
+        content:"";position:absolute;inset:0;
+        background:linear-gradient(145deg, rgba(23,37,34,.10), transparent 58%);
+      }
+      .hero-badge{
+        position:absolute;bottom:16px;left:16px;
+        background:var(--lime);color:var(--ink);
+        padding:10px 12px;border-radius:14px;
+        font-weight:900;font-size:12px;
+        border:1px solid rgba(0,0,0,.04);
+      }
+      .section{padding:44px 0}
+      .section-title{font-size:13px;letter-spacing:1.6px;text-transform:uppercase;color:var(--orange);font-weight:900}
+      .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+      .cards{display:grid;grid-template-columns:repeat(3, 1fr);gap:14px;margin-top:18px}
+      .card{
+        background:rgba(255,255,255,.82);border:1px solid var(--line);border-radius:var(--radius);
+        padding:16px;
+      }
+      .card h3{margin:10px 0 6px;font-size:16px}
+      .card p{margin:0;color:var(--muted);font-size:14px}
+      .process{
+        border-top:1px solid var(--line);
+        padding-top:26px;margin-top:18px;
+      }
+      .steps{display:grid;grid-template-columns:repeat(3, 1fr);gap:14px;margin-top:16px}
+      .step{
+        background:rgba(255,255,255,.82);border:1px solid var(--line);border-radius:var(--radius);
+        padding:16px;
+      }
+      .step .num{color:var(--orange);font-weight:1000}
+      .metrics{
+        background:var(--ink);color:var(--paper);border-radius:var(--radius);
+        padding:22px;display:grid;grid-template-columns:repeat(3,1fr);gap:16px;
+      }
+      .metric strong{font-size:34px;letter-spacing:-2px}
+      .metric small{color:rgba(248,252,255,.8)}
+      .muted{color:var(--muted)}
+      .split{
+        display:grid;grid-template-columns:1.2fr .8fr;gap:20px;align-items:start;
+      }
+      .form-wrap{
+        background:rgba(255,255,255,.82);border:1px solid var(--line);border-radius:var(--radius);
+        padding:18px;
+      }
+      label{display:block;font-weight:800;font-size:13px;margin-top:12px;margin-bottom:6px}
+      input, select, textarea{
+        width:100%;padding:12px 12px;border-radius:12px;border:1px solid var(--line);
+        background:rgba(248,252,255,.9);outline:none;
+        font-size:14px;
+      }
+      input:focus, select:focus, textarea:focus{border-color:rgba(35,103,255,.7)}
+      .checkrow{display:flex;gap:10px;align-items:flex-start;margin-top:12px}
+      .checkrow input{width:auto;margin-top:3px}
+      .form-actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:18px}
+      footer{padding:34px 0;color:var(--muted);font-size:13px}
+      .faq{margin-top:16px}
+      .faq details{
+        background:rgba(255,255,255,.82);border:1px solid var(--line);border-radius:var(--radius);padding:14px 14px;
+      }
+      .faq summary{font-weight:900;cursor:pointer}
+      @media (max-width: 900px){
+        .hero-grid{grid-template-columns:1fr;gap:18px}
+        .cards{grid-template-columns:1fr; }
+        .steps{grid-template-columns:1fr}
+        .grid-2{grid-template-columns:1fr}
+        .metrics{grid-template-columns:1fr; }
+        .split{grid-template-columns:1fr}
+        .nav-links{display:none}
+      }
+    </style>
+  </head>
+
+  <body>
+    <header>
+      <div class="container nav">
+        <div class="brand" aria-label="Aihuishou Electricals">
+          <img class="company-logo" src="images/company-logo.png" alt="Aihuishou Electricals" />
+          <span class="company-name">Aihuishou Electricals Limited</span>
+        </div>
+
+        <nav class="nav-links" aria-label="Primary">
+          <a href="#impact">Our impact</a>
+          <a href="#how">How it works</a>
+          <a href="#contact">Contact</a>
+        </nav>
+
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
+          <a class="btn btn-ghost" href="tel:+254716333399">Call</a>
+          <a class="btn btn-primary" href="agent-login.html">Agent login</a>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <!-- HERO -->
+      <section class="hero">
+        <div class="container hero-grid">
+          <div>
+            <div class="chip">
+              <span style="width:10px;height:10px;border-radius:50%;background:var(--orange);display:inline-block"></span>
+              Responsible electronics recovery for a cleaner Kenya
+            </div>
+
+            <h1 class="h1">
+              Make room for<br/>
+              <span style="color:var(--orange)">what's next.</span>
+            </h1>
+
+            <p class="lead">
+              We collect, recover and responsibly recycle unwanted electronics—keeping valuable materials in use
+              and harmful waste out of Kenya’s environment.
+            </p>
+
+            <div class="hero-actions">
+              <a class="btn btn-accent" href="#contact">Book a pickup ↗</a>
+              <a class="btn btn-primary" id="whatsAppBtn" href="#" rel="noopener">Sell directly on WhatsApp ↗</a>
+              <a class="btn btn-ghost" href="#how">See how it works ↓</a>
+            </div>
+
+            <div class="process">
+              <div class="section-title">Since 2018 • Traceable & responsible</div>
+              <div class="metrics" style="margin-top:18px">
+                <div class="metric">
+                  <strong>12k+</strong>
+                  <div><small>Devices recovered</small></div>
+                </div>
+                <div class="metric">
+                  <strong>48t</strong>
+                  <div><small>Waste diverted</small></div>
+                </div>
+                <div class="metric">
+                  <strong>100%</strong>
+                  <div><small>Traceable process</small></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- HERO IMAGE -->
+          <div class="hero-card" aria-label="E-waste recovery visual">
+            <div class="hero-media">
+              <!-- Replace the image src with an actual asset you add to /assets -->
+              <img
+                src="images/electronic-waste.avif"
+                alt="Electronic waste including circuit boards, hard drives and recycling components"
+                fetchpriority="high"
+              />
+              <div class="hero-badge">Responsible recovery • Highest-value next use</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- IMPACT / CARDS -->
+      <section class="section" id="impact">
+        <div class="container">
+          <div class="section-title">Responsible recovery</div>
+          <h2 style="margin:10px 0 0;font-size:clamp(26px,4vw,40px);letter-spacing:-2px;line-height:1.05">
+            Better electronics lifecycle—every device gets a second story.
+          </h2>
+
+          <div class="cards">
+            <div class="card">
+              <span style="color:var(--orange);font-size:24px">📱</span>
+              <h3>Phones & devices</h3>
+              <p>Collected securely, assessed, and routed to the best next use.</p>
+            </div>
+            <div class="card">
+              <span style="color:var(--orange);font-size:24px">💻</span>
+              <h3>Laptops & IT assets</h3>
+              <p>From single units to full office clear-outs—handled end-to-end.</p>
+            </div>
+            <div class="card">
+              <span style="color:var(--orange);font-size:24px">🧩</span>
+              <h3>Motherboards & hard drives</h3>
+              <p>Recovered responsibly with reporting back on your impact.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- HOW IT WORKS -->
+      <section class="section" id="how">
+        <div class="container">
+          <div class="section-title">How it works</div>
+          <div class="split" style="margin-top:14px">
+            <div>
+              <h2 style="margin:0 0 12px;font-size:clamp(22px,3.6vw,34px);letter-spacing:-1.5px">
+                Clear steps. Clear reporting.
+              </h2>
+              <p class="muted" style="margin:0;max-width:560px">
+                We make disposal straightforward for homes, businesses and institutions—while keeping recovery traceable.
+              </p>
+
+              <div class="steps">
+                <div class="step">
+                  <div class="num">01</div>
+                  <h3 style="margin:6px 0 6px">We collect</h3>
+                  <p class="muted" style="margin:0;font-size:14px">
+                    Book a convenient pickup anywhere in Nairobi and beyond. We handle logistics.
+                  </p>
+                </div>
+                <div class="step">
+                  <div class="num">02</div>
+                  <h3 style="margin:6px 0 6px">We sort & recover</h3>
+                  <p class="muted" style="margin:0;font-size:14px">
+                    Devices are assessed, securely handled and directed to their highest-value next use.
+                  </p>
+                </div>
+                <div class="step">
+                  <div class="num">03</div>
+                  <h3 style="margin:6px 0 6px">We report back</h3>
+                  <p class="muted" style="margin:0;font-size:14px">
+                    Get a clear record of your impact and where your electronics went.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div class="hero-card" style="background:rgba(255,255,255,.82);border:1px solid var(--line)">
+              <div style="padding:16px">
+                <div class="section-title" style="color:var(--orange)">Ready when you are</div>
+                <h3 style="margin:10px 0 6px;font-size:18px">Clear the clutter. Keep the good stuff moving.</h3>
+                <p class="muted" style="margin:0;font-size:14px">
+                  Tell us what you have and where it is—our team will get back to you with the next step.
+                </p>
+                <div style="margin-top:14px;display:flex;gap:12px;flex-wrap:wrap">
+                  <a class="btn btn-accent" href="#contact">Start a conversation ↗</a>
+                  <a class="btn btn-ghost" href="agent-login.html#signup">Become an agent ↗</a>
+                </div>
+
+                <div class="faq">
+                  <details>
+                    <summary>Do you work with businesses and institutions?</summary>
+                    <p class="muted" style="margin:10px 0 0;font-size:14px">
+                      Yes—single items or bulk office clear-outs. We coordinate pickup and recovery reporting.
+                    </p>
+                  </details>
+                  <details style="margin-top:10px">
+                    <summary>Is the recovery traceable?</summary>
+                    <p class="muted" style="margin:10px 0 0;font-size:14px">
+                      Yes—every device has a second story, and we provide a record of impact.
+                    </p>
+                  </details>
+                </div>
+              </div>
+
+              <div style="height:240px;position:relative;overflow:hidden">
+                <img
+                  src="images/original.avif"
+                  alt="Circuit board and electronics components"
+                  loading="lazy"
+                  style="width:100%;height:100%;object-fit:cover"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- CONTACT -->
+      <section class="section" id="contact">
+        <div class="container">
+          <div class="section-title">Contact</div>
+          <h2 style="margin:10px 0 14px;font-size:clamp(22px,3.8vw,34px);letter-spacing:-1.4px">
+            Book a pickup or start a conversation
+          </h2>
+
+          <div class="grid-2">
+            <div class="form-wrap">
+              <h3 style="margin:0 0 10px">Quick message</h3>
+              <form id="contactForm">
+                <label for="cName">Name</label>
+                <input id="cName" name="cName" required placeholder="Your name" />
+
+                <label for="cPhone">Phone</label>
+                <input id="cPhone" name="cPhone" inputmode="tel" required placeholder="+2547XXXXXXXX" />
+
+                <label for="cMessage">What electronics do you have?</label>
+                <textarea id="cMessage" name="cMessage" rows="4" required placeholder="e.g., laptops, phones, hard drives..."></textarea>
+
+                <div class="form-actions">
+                  <button class="btn btn-primary" type="submit">Send via WhatsApp ↗</button>
+                </div>
+
+                <p id="contactStatus" class="muted" style="margin-top:14px;font-size:14px" role="status" aria-live="polite"></p>
+              </form>
+            </div>
+
+            <div class="hero-card" style="background:rgba(255,255,255,.82);border:1px solid var(--line);padding:16px">
+              <h3 style="margin:0 0 10px">Direct sellers: WhatsApp</h3>
+              <p class="muted" style="margin:0 0 14px;font-size:14px">
+                For direct sellers of e-waste products, message us and we’ll respond with the next step.
+              </p>
+              <div style="display:flex;gap:12px;flex-wrap:wrap">
+                <a class="btn btn-accent" href="#" id="whatsAppDirect">Chat on WhatsApp ↗</a>
+                <a class="btn btn-ghost" href="mailto:aihuishoulimited@gmail.com">Email us</a>
+              </div>
+
+              <div style="margin-top:16px">
+                <div class="chip">
+                  <span style="width:10px;height:10px;border-radius:50%;background:var(--lime);display:inline-block"></span>
+                  Nairobi • Kenya (pickup across Nairobi & beyond)
+                </div>
+              </div>
+
+              <div style="margin-top:16px;height:220px;overflow:hidden;border-radius:var(--radius);border:1px solid var(--line)">
+                <img
+                  src="images/electronic%20waste%20collection.png"
+                  alt="Electronic waste collection"
+                  loading="lazy"
+                  style="width:100%;height:100%;object-fit:cover"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <footer>
+        <div class="container" style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">
+          <div class="brand">
+            <img class="company-logo" src="images/company-logo.png" alt="Aihuishou Electricals" />
+          </div>
+          <div style="margin-left:auto">© 2026 Aihuishou Electricals Limited</div>
+        </div>
+      </footer>
+    </main>
+
+    <script>
+      // =========================
+      // WhatsApp redirect
+      // =========================
+      // REPLACE with the real WhatsApp number in international format (no +, no spaces)
+      const WHATSAPP_NUMBER = "254716333399";
+
+      function waLink(message){
+        const text = encodeURIComponent(message);
+        return `https://wa.me/${WHATSAPP_NUMBER}?text=${text}`;
+      }
+
+      const defaults = {
+        sellers: "Hi Aihuishou Electricals — I'm a direct e-waste seller. I want to sell phones/laptops/hard drives. Please advise next steps.",
+        pickup: "Hi Aihuishou Electricals — I want to book a pickup. Please share availability and what you need from me."
+      };
+
+      const btns = [
+        "whatsAppBtn",
+        "whatsAppBtn2",
+        "whatsAppDirect"
+      ];
+      const map = {
+        "whatsAppBtn": defaults.sellers,
+        "whatsAppBtn2": defaults.sellers,
+        "whatsAppDirect": defaults.sellers
+      };
+
+      btns.forEach(id => {
+        const el = document.getElementById(id);
+        if(el) el.href = waLink(map[id] || defaults.sellers);
+      });
+
+      // Contact form: send pickup request via WhatsApp
+      const contactForm = document.getElementById("contactForm");
+      const contactStatus = document.getElementById("contactStatus");
+
+      contactForm?.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const name = document.getElementById("cName").value.trim();
+        const phone = document.getElementById("cPhone").value.trim();
+        const goods = document.getElementById("cMessage").value.trim();
+        const message = `Hi Aihuishou Electricals — I would like to book a pickup.\n\nName: ${name}\nPhone: ${phone}\nElectronics: ${goods}`;
+
+        contactStatus.textContent = "Opening WhatsApp...";
+        window.location.assign(waLink(message));
+        contactForm.reset();
+      });
+
+    </script>
+  </body>
+</html>
+git remote add origin https://github.com/chrislupin/aihuishou-electricals.git
+git branch -M main
+git push -u origin main

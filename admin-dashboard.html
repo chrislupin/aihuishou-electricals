@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Admin request inbox | Aihuishou Electricals</title>
+    <link rel="stylesheet" href="styles.css" />
+    <style>
+      * { box-sizing: border-box; }
+      body { margin: 0; min-height: 100vh; font-family: 'Space Grotesk', system-ui, sans-serif; }
+      .admin-shell { width: min(1120px, calc(100% - 36px)); margin: 0 auto; padding: 22px 0 62px; }
+      .admin-header, .heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+      .portal-logo { width: 154px; height: 58px; object-fit: contain; object-position: left center; }
+      .header-actions { display: flex; gap: 10px; align-items: center; }
+      .btn { display: inline-flex; align-items: center; justify-content: center; padding: 11px 16px; border: 1px solid transparent; border-radius: 8px; background: var(--orange); color: #fff; font: 700 14px inherit; cursor: pointer; }
+      .btn-ghost { background: rgba(255,255,255,.65); color: var(--blue-deep); border-color: var(--line); }
+      .eyebrow { color: var(--orange); font: 500 11px 'DM Mono', monospace; letter-spacing: 1.4px; text-transform: uppercase; }
+      h1 { margin: 8px 0 4px; color: var(--blue-deep); font-size: clamp(30px, 5vw, 48px); letter-spacing: -2px; }
+      h2, h3 { color: var(--blue-deep); }
+      .muted { margin: 0; color: var(--muted); font-size: 14px; }
+      .heading { align-items: end; margin: 40px 0 22px; }
+      .date-controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 26px 0 18px; }
+      .date-controls label { color: var(--blue-deep); font: 700 13px inherit; }
+      .date-controls select { width: auto; min-width: 230px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: rgba(255,255,255,.8); color: var(--ink); font: 600 13px inherit; }
+      .request-section { margin-top: 24px; }
+      .request-section h2 { margin: 0 0 10px; font-size: 21px; }
+      .request-section h2 span { color: var(--muted); font: 500 12px 'DM Mono', monospace; }
+      .request-list { display: grid; gap: 14px; }
+      .request-list.is-empty { display: block; }
+      .request-card { padding: 20px; border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,.88); box-shadow: 0 14px 34px rgba(20,83,136,.09); }
+      .request-top { display: flex; align-items: start; justify-content: space-between; gap: 18px; }
+      .request-top h2 { margin: 0 0 5px; font-size: 19px; }
+      .request-status, .request-role { padding: 6px 9px; border-radius: 999px; color: var(--blue-deep); font: 500 10px 'DM Mono', monospace; white-space: nowrap; }
+      .request-status { background: rgba(111,231,255,.35); }
+      .request-role { display: inline-block; margin-top: 7px; background: rgba(35,103,255,.12); }
+      .approve-button { margin-top: 16px; }
+      .request-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 18px; }
+      .request-detail { padding-top: 12px; border-top: 1px solid var(--line); }
+      .request-detail strong { display: block; margin-bottom: 4px; color: var(--muted); font: 500 10px 'DM Mono', monospace; letter-spacing: .5px; text-transform: uppercase; }
+      .goods-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+      .goods-list li { display: flex; justify-content: space-between; gap: 12px; color: var(--ink); font-size: 14px; }
+      .goods-list span { color: var(--orange); font-weight: 700; white-space: nowrap; }
+      .empty, .error { padding: 28px; border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,.82); color: var(--muted); }
+      .error { color: #b42318; }
+      @media (max-width: 720px) { .heading, .request-top { align-items: flex-start; flex-direction: column; } .request-grid { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <main class="admin-shell">
+      <header class="admin-header"><a href="index.html"><img class="portal-logo" src="images/company-logo.png" alt="Aihuishou Electricals" /></a><div class="header-actions"><button class="btn btn-ghost" id="refreshButton" type="button">Refresh</button><button class="btn btn-ghost" id="logoutButton" type="button">Log out</button></div></header>
+      <section class="heading"><div><div class="eyebrow">Operations console</div><h1>Pickup request inbox</h1><p class="muted">Requests are grouped by date and approval status.</p></div></section>
+      <div class="date-controls"><label for="requestDate">Request date</label><select id="requestDate"><option>Loading dates...</option></select></div>
+      <section class="request-section"><h2>Unapproved requests <span id="pendingCount"></span></h2><div class="request-list" id="pendingList" aria-live="polite"><div class="empty">Loading requests...</div></div></section>
+      <section class="request-section"><h2>Approved requests <span id="approvedCount"></span></h2><div class="request-list" id="approvedList" aria-live="polite"></div></section>
+    </main>
+    <script>
+      const pendingList = document.getElementById('pendingList');
+      const approvedList = document.getElementById('approvedList');
+      const requestDate = document.getElementById('requestDate');
+      const pendingCount = document.getElementById('pendingCount');
+      const approvedCount = document.getElementById('approvedCount');
+      let allRequests = [];
+
+      function dateKey(dateString) {
+        const date = new Date(dateString);
+        return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+      }
+
+      function formatDateLabel(key) {
+        const [year, month, day] = key.split('-').map(Number);
+        return new Intl.DateTimeFormat('en-KE', { dateStyle: 'full' }).format(new Date(year, month - 1, day));
+      }
+
+      function requestRole(request) {
+        return request.requestType === 'fieldEmployee' ? 'Field employee' : 'Agent';
+      }
+
+      function addEmptyMessage(list, message) {
+        list.className = 'request-list is-empty';
+        list.append(Object.assign(document.createElement('div'), { className: 'empty', textContent: message }));
+      }
+
+      function renderRequest(request) {
+        const card = document.createElement('article');
+        card.className = 'request-card';
+        const goods = Array.isArray(request.goods) ? request.goods : [{ name: request.goods, quantity: request.quantity }];
+        const agent = request.agent || {};
+        card.innerHTML = `<div class="request-top"><div><h2></h2><p class="muted"></p><span class="request-role"></span></div><span class="request-status"></span></div><div class="request-grid"><div class="request-detail"><strong>Agent</strong><span class="agent-value"></span></div><div class="request-detail"><strong>Contact</strong><span class="contact-value"></span></div><div class="request-detail"><strong>Goods</strong><ul class="goods-list"></ul></div><div class="request-detail"><strong>Pickup time</strong><span class="time-value"></span></div><div class="request-detail"><strong>Notes</strong><span class="notes-value"></span></div></div><button class="btn approve-button" type="button"></button>`;
+        card.querySelector('h2').textContent = agent.company || agent.fullName || 'Agent pickup request';
+        card.querySelector('.muted').textContent = new Intl.DateTimeFormat('en-KE', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(request.createdAt));
+        card.querySelector('.request-status').textContent = request.status;
+        card.querySelector('.request-role').textContent = request.requestType === 'fieldEmployee' ? 'Field employee' : 'Agent pickup';
+        card.querySelector('.agent-value').textContent = agent.fullName || 'Unknown agent';
+        card.querySelector('.contact-value').textContent = [agent.email, agent.phone].filter(Boolean).join(' · ') || 'Not available';
+        card.querySelector('.time-value').textContent = request.preferredTime;
+        card.querySelector('.notes-value').textContent = request.notes || 'None';
+        const goodsList = card.querySelector('.goods-list');
+        goods.forEach((good) => { const li = document.createElement('li'); li.textContent = good.name || 'Unknown good'; const quantity = document.createElement('span'); quantity.textContent = good.quantity; li.append(quantity); goodsList.append(li); });
+        const location = document.createElement('div');
+        location.className = 'request-detail';
+        location.innerHTML = '<strong>Pickup location</strong><span></span>';
+        location.querySelector('span').textContent = request.location;
+        card.querySelector('.request-grid').append(location);
+        const approveButton = card.querySelector('.approve-button');
+        approveButton.textContent = request.status === 'Approved' ? 'Approved' : 'Approve request';
+        approveButton.disabled = request.status === 'Approved';
+        approveButton.addEventListener('click', async () => {
+          approveButton.disabled = true;
+          approveButton.textContent = 'Approving...';
+          try {
+            const response = await fetch(`/api/admin/pickup-requests/${encodeURIComponent(request.id)}/approve`, { method: 'POST' });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || 'Unable to approve request.');
+            await loadRequests();
+          } catch (error) {
+            approveButton.disabled = false;
+            approveButton.textContent = 'Approve request';
+            window.alert(error.message || 'Unable to approve request.');
+          }
+        });
+        return card;
+      }
+
+      function renderGroup(list, requests, role) {
+        const group = requests.filter((request) => requestRole(request) === role);
+        list.className = 'request-list';
+        list.replaceChildren();
+        if (!group.length) {
+          addEmptyMessage(list, `No ${role.toLowerCase()} requests for this date.`);
+          return;
+        }
+        group.forEach((request) => list.append(renderRequest(request)));
+      }
+
+      function appendRoleGroup(parent, requests, role) {
+        parent.append(Object.assign(document.createElement('h3'), { textContent: `${role} requests` }));
+        const list = document.createElement('div');
+        renderGroup(list, requests, role);
+        parent.append(...list.childNodes);
+      }
+
+      function renderSelectedDate() {
+        const selectedDate = requestDate.value;
+        const requests = allRequests.filter((request) => dateKey(request.createdAt) === selectedDate);
+        const pending = requests.filter((request) => request.status !== 'Approved');
+        const approved = requests.filter((request) => request.status === 'Approved');
+        pendingCount.textContent = `(${pending.length})`;
+        approvedCount.textContent = `(${approved.length})`;
+        pendingList.replaceChildren();
+        approvedList.replaceChildren();
+        appendRoleGroup(pendingList, pending, 'Agent');
+        appendRoleGroup(pendingList, pending, 'Field employee');
+        appendRoleGroup(approvedList, approved, 'Agent');
+        appendRoleGroup(approvedList, approved, 'Field employee');
+      }
+
+      async function loadRequests() {
+        try {
+          const response = await fetch('/api/admin/pickup-requests');
+          const result = await response.json();
+          if (!response.ok) { if (response.status === 401) return window.location.assign('admin-login.html'); throw new Error(result.error || 'Unable to load requests.'); }
+          allRequests = result.requests.sort((first, second) => new Date(second.createdAt) - new Date(first.createdAt));
+          const today = dateKey(new Date().toISOString());
+          const dates = [today, ...new Set(allRequests.map((request) => dateKey(request.createdAt)).filter((date) => date !== today))];
+          requestDate.replaceChildren();
+          if (!allRequests.length) { requestDate.append(Object.assign(document.createElement('option'), { value: today, textContent: formatDateLabel(today) })); addEmptyMessage(pendingList, 'No pickup requests have been submitted yet.'); return; }
+          dates.forEach((date) => requestDate.append(Object.assign(document.createElement('option'), { value: date, textContent: formatDateLabel(date) })));
+          requestDate.value = today;
+          renderSelectedDate();
+        } catch (error) { pendingList.replaceChildren(Object.assign(document.createElement('div'), { className: 'error', textContent: error.message || 'Unable to load requests.' })); }
+      }
+      requestDate.addEventListener('change', renderSelectedDate);
+      document.getElementById('refreshButton').addEventListener('click', loadRequests);
+      document.getElementById('logoutButton').addEventListener('click', async () => { await fetch('/api/admin-logout', { method: 'POST' }); window.location.assign('admin-login.html'); });
+      loadRequests();
+    </script>
+  </body>
+</html>
