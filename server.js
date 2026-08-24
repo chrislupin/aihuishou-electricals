@@ -24,6 +24,7 @@ const database = mongoClient?.db(process.env.MONGODB_DB || "aihuishou");
 const accountsCollection = database?.collection("agent_accounts");
 const pickupRequestsCollection = database?.collection("pickup_requests");
 const adminEmail = normalizeConfiguredEmail(process.env.ADMIN_EMAIL);
+let databaseReady;
 
 function normalizeConfiguredEmail(email) {
   return typeof email === "string" ? email.trim().toLowerCase() : "";
@@ -54,6 +55,16 @@ const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 20, standardHea
 const requestLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 30, standardHeaders: "draft-8", legacyHeaders: false });
 
 app.get("/health", (req, res) => res.json({ status: "ok" }));
+
+app.use("/api", async (req, res, next) => {
+  try {
+    await ensureDatabase();
+    return next();
+  } catch (error) {
+    console.error("Database connection failed:", error.message);
+    return res.status(503).json({ error: "Database is temporarily unavailable." });
+  }
+});
 
 function normalizeEmail(email) {
   return email.trim().toLowerCase();
@@ -114,6 +125,21 @@ async function migrateJsonData() {
     }
   }
   await migrationCollection.insertOne({ name: "json-to-mongodb-v1", migratedAt: new Date() });
+}
+
+async function ensureDatabase() {
+  if (!mongoClient) throw new Error("MONGODB_URI is required.");
+  if (!databaseReady) {
+    databaseReady = (async () => {
+      await mongoClient.connect();
+      await database.command({ ping: 1 });
+      await migrateJsonData();
+    })().catch((error) => {
+      databaseReady = undefined;
+      throw error;
+    });
+  }
+  return databaseReady;
 }
 
 function createSession(res, account) {
