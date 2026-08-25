@@ -611,17 +611,34 @@ app.use("/api", (req, res) => {
   res.status(404).json({ error: "API endpoint not found." });
 });
 
-async function startServer() {
-  if (!mongoClient) throw new Error("MONGODB_URI is required to start the application.");
+async function initializeDatabase() {
+  if (!mongoClient) {
+    throw new Error("MONGODB_URI is required to start the application.");
+  }
+
   await mongoClient.connect();
   await database.command({ ping: 1 });
+
   await migrateJsonData();
-  app.listen(port, () => {
-    console.log(`Aihuishou website running at http://localhost:${port}`);
-  });
+
+  console.log("MongoDB connected successfully.");
 }
 
-startServer().catch((error) => {
+// Initialize the database when the serverless function starts
+const startupPromise = initializeDatabase().catch((error) => {
   console.error("Server startup failed:", error.message);
-  process.exitCode = 1;
+  throw error;
 });
+
+// Wait for database initialization before handling requests
+app.use(async (req, res, next) => {
+  try {
+    await startupPromise;
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Export Express app for Vercel
+module.exports = app;
