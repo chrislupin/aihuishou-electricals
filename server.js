@@ -45,6 +45,7 @@ const database = mongoClient?.db(process.env.MONGODB_DB || "aihuishou");
 
 const accountsCollection = database?.collection("agent_accounts");
 const pickupRequestsCollection = database?.collection("pickup_requests");
+const pickupDateRequestsCollection = database?.collection("pickup_date_requests");
 const passwordResetCollection = database?.collection("password_resets");
 const adminAccountsCollection = database?.collection("admin_accounts");
 
@@ -97,6 +98,17 @@ app.use(express.static(path.join(__dirname)));
 // Serve the main website homepage
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "index.html"));
+});
+
+app.get("/sitemap.xml", (req, res) => {
+  const configuredBase = process.env.APP_URL || `${req.protocol}://${req.get("host")}`;
+  const baseUrl = configuredBase.replace(/\/+$/, "");
+  res.type("application/xml").send(
+    `<?xml version="1.0" encoding="UTF-8"?>\n` +
+    `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n` +
+    `  <url><loc>${baseUrl}/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>\n` +
+    `</urlset>`
+  );
 });
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -178,6 +190,12 @@ function isValidDateOnly(value) {
   return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
 }
 
+const ACTIVE_PICKUP_DATE_STATUSES = ["Pending approval", "Approved"];
+
+function isActivePickupDateRequest(request) {
+  return Boolean(request?.active) && ACTIVE_PICKUP_DATE_STATUSES.includes(request.status);
+}
+
 function readCookie(req, name) {
   const cookies = req.headers.cookie || "";
   const prefix = `${name}=`;
@@ -241,6 +259,38 @@ async function readPickupRequests() {
   return (
     await pickupRequestsCollection.find({}).toArray()
   ).map(withoutMongoId);
+}
+
+async function readPickupDateRequests() {
+  if (!pickupDateRequestsCollection) {
+    throw new Error("MONGODB_URI is not configured.");
+  }
+
+  return (
+    await pickupDateRequestsCollection.find({}).toArray()
+  ).map(withoutMongoId);
+}
+
+function agentGoodsSinceLastPickup(agentEmail, pickupRequests) {
+  const agentRequests = (pickupRequests || []).filter(
+    (request) => request.agentEmail === agentEmail && (request.requestType || "agent") === "agent"
+  );
+  const approvedRequests = agentRequests
+    .filter((request) => request.status === "Approved")
+    .sort((first, second) => new Date(second.approvedAt || second.createdAt) - new Date(first.approvedAt || first.createdAt));
+  const lastPickup = approvedRequests[0] || null;
+  const cutoffValue = lastPickup?.approvedAt || lastPickup?.createdAt;
+  const cutoff = cutoffValue ? new Date(cutoffValue) : null;
+  const requestsSinceLastPickup = cutoff && !Number.isNaN(cutoff.getTime())
+    ? agentRequests.filter((request) => new Date(request.createdAt) > cutoff)
+    : agentRequests;
+
+  return {
+    totalAmount: requestsSinceLastPickup.reduce((total, request) => total + calculateRequestTotal(request.goods), 0),
+    totalQuantity: requestsSinceLastPickup.reduce((total, request) => total + (request.goods || []).reduce((sum, good) => sum + (Number(good.quantity) || 0), 0), 0),
+    lastPickupDate: lastPickup ? requestPreferredDate(lastPickup) : "",
+    lastPickupAt: cutoffValue || ""
+  };
 }
 
 async function savePickupRequests(requests) {
@@ -358,6 +408,11 @@ async function ensureDatabase() {
       await Promise.all([
         accountsCollection.createIndex({ email: 1 }, { unique: true }),
         pickupRequestsCollection.createIndex({ id: 1 }, { unique: true }),
+        pickupDateRequestsCollection.createIndex({ id: 1 }, { unique: true }),
+        pickupDateRequestsCollection.createIndex(
+          { agentEmail: 1, active: 1 },
+          { unique: true, partialFilterExpression: { active: true } }
+        ),
         passwordResetCollection.createIndex({ email: 1 }),
         passwordResetCollection.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
         adminAccountsCollection.createIndex({ email: 1 }, { unique: true })
@@ -1373,6 +1428,193 @@ app.get(
 );
 
 app.get(
+  "/api/pickup-date-requests",
+  requireAgent,
+  async (req, res) => {
+    try {
+      const [dateRequests, pickupRequests] = await Promise.all([
+        readPickupDateRequests(),
+        readPickupRequests()
+      ]);
+      const agentRequests = dateRequests
+        .filter((request) => request.agentEmail === req.agent.email)
+        .sort((first, second) => new Date(second.createdAt) - new Date(first.createdAt));
+      const latest = agentRequests[0] || null;
+
+      return res.json({
+        approval: latest,
+        locked: isActivePickupDateRequest(latest),
+        ...agentGoodsSinceLastPickup(req.agent.email, pickupRequests)
+      });
+    } catch (error) {
+      console.error("Pickup date approval lookup failed:", error.message);
+      return res.status(500).json({ error: "Unable to load pickup date approval status." });
+    }
+  }
+);
+
+app.post(
+  "/api/pickup-date-requests",
+  requestLimiter,
+  requireAgent,
+  async (req, res) => {
+    const requestedDate = typeof req.body?.requestedDate === "string"
+      ? req.body.requestedDate.trim()
+      : "";
+
+    if (!isValidDateOnly(requestedDate)) {
+      return res.status(400).json({ error: "Choose a valid pickup date." });
+    }
+
+    try {
+      const active = await pickupDateRequestsCollection.findOne({
+        agentEmail: req.agent.email,
+        active: true,
+        status: { $in: ACTIVE_PICKUP_DATE_STATUSES }
+      });
+
+      if (active) {
+        return res.status(409).json({
+          error: active.status === "Approved"
+            ? "Your pickup date is already approved. It must be rejected before you can choose another date."
+            : "A pickup date is already pending approval. Wait for the admin decision before choosing another date."
+        });
+      }
+
+      const approval = {
+        id: crypto.randomUUID(),
+        agentEmail: req.agent.email,
+        requestedDate,
+        status: "Pending approval",
+        active: true,
+        createdAt: new Date().toISOString()
+      };
+
+      try {
+        await pickupDateRequestsCollection.insertOne(approval);
+      } catch (error) {
+        if (error?.code === 11000) {
+          return res.status(409).json({ error: "A pickup date is already pending approval." });
+        }
+        throw error;
+      }
+
+      return res.status(201).json({
+        message: "Pickup date sent for admin approval.",
+        approval: withoutMongoId(approval)
+      });
+    } catch (error) {
+      console.error("Pickup date approval creation failed:", error.message);
+      return res.status(500).json({ error: "Unable to submit the pickup date for approval." });
+    }
+  }
+);
+
+app.get(
+  "/api/admin/pickup-date-requests",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const [dateRequests, pickupRequests, accounts] = await Promise.all([
+        readPickupDateRequests(),
+        readPickupRequests(),
+        readAccounts()
+      ]);
+      const accountByEmail = new Map(accounts.map((account) => [account.email, account]));
+      const adminRequests = dateRequests
+        .sort((first, second) => {
+          const statusOrder = { "Pending approval": 0, Approved: 1, Rejected: 2 };
+          return (statusOrder[first.status] ?? 3) - (statusOrder[second.status] ?? 3)
+            || new Date(second.createdAt) - new Date(first.createdAt);
+        })
+        .map((request) => {
+          const agent = accountByEmail.get(request.agentEmail);
+          const totals = agentGoodsSinceLastPickup(request.agentEmail, pickupRequests);
+          return {
+            ...request,
+            agent: agent
+              ? {
+                  fullName: agent.fullName,
+                  phone: agent.phone,
+                  email: agent.email,
+                  company: agent.company,
+                  location: agent.location
+                }
+              : null,
+            totalAmountSinceLastPickup: totals.totalAmount,
+            totalQuantitySinceLastPickup: totals.totalQuantity,
+            lastPickupDate: totals.lastPickupDate,
+            lastPickupAt: totals.lastPickupAt
+          };
+        });
+
+      return res.json({ requests: adminRequests });
+    } catch (error) {
+      console.error("Admin pickup date approval lookup failed:", error.message);
+      return res.status(500).json({ error: "Unable to load pickup date approvals." });
+    }
+  }
+);
+
+app.post(
+  "/api/admin/pickup-date-requests/:id/approve",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const result = await pickupDateRequestsCollection.updateOne(
+        { id: req.params.id, status: "Pending approval", active: true },
+        {
+          $set: {
+            status: "Approved",
+            reviewedAt: new Date().toISOString(),
+            reviewedBy: adminEmail
+          }
+        }
+      );
+      if (!result.matchedCount) {
+        return res.status(409).json({ error: "This pickup date is no longer pending approval." });
+      }
+      return res.json({ message: "Pickup date approved." });
+    } catch (error) {
+      console.error("Pickup date approval failed:", error.message);
+      if (error?.code === 11000) {
+        return res.status(409).json({ error: "This agent already has another approved pickup date." });
+      }
+      return res.status(500).json({ error: "Unable to approve this pickup date." });
+    }
+  }
+);
+
+app.post(
+  "/api/admin/pickup-date-requests/:id/reject",
+  requireAdmin,
+  async (req, res) => {
+    const reason = typeof req.body?.reason === "string" ? req.body.reason.trim().slice(0, 500) : "";
+    try {
+      const result = await pickupDateRequestsCollection.updateOne(
+        { id: req.params.id, status: { $in: ["Pending approval", "Approved"] } },
+        {
+          $set: {
+            status: "Rejected",
+            active: false,
+            reviewedAt: new Date().toISOString(),
+            reviewedBy: adminEmail,
+            rejectionReason: reason
+          }
+        }
+      );
+      if (!result.matchedCount) {
+        return res.status(409).json({ error: "This pickup date has already been rejected." });
+      }
+      return res.json({ message: "Pickup date rejected." });
+    } catch (error) {
+      console.error("Pickup date rejection failed:", error.message);
+      return res.status(500).json({ error: "Unable to reject this pickup date." });
+    }
+  }
+);
+
+app.get(
   "/api/admin/pickup-requests",
   requireAdmin,
   async (req, res) => {
@@ -1556,6 +1798,19 @@ app.post(
     const cleanPreferredDate = typeof preferredDate === "string" ? preferredDate.trim() : "";
     if (cleanPreferredDate && !isValidDateOnly(cleanPreferredDate)) {
       return res.status(400).json({ error: "Choose a valid pickup date." });
+    }
+    if (!isFieldEmployee && cleanPreferredDate) {
+      const activeDateApproval = await pickupDateRequestsCollection.findOne({
+        agentEmail: req.agent.email,
+        active: true,
+        status: { $in: ACTIVE_PICKUP_DATE_STATUSES }
+      });
+      if (!activeDateApproval) {
+        return res.status(409).json({ error: "Check pickup-date availability before creating a ticket with a date." });
+      }
+      if (activeDateApproval.requestedDate !== cleanPreferredDate) {
+        return res.status(409).json({ error: "Your selected date is locked while another date is pending or approved." });
+      }
     }
     const cleanedGoods =
       goods.map((item) => ({

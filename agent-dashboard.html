@@ -62,6 +62,13 @@
       .history-total { color: var(--blue-deep); font-weight: 800; }
       .location-actions { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-top: 9px; }
       .location-note { color: var(--muted); font-size: 12px; }
+      .date-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 9px; }
+      .date-approval { margin-top: 14px; padding: 13px 14px; border: 1px solid var(--line); border-radius: 11px; background: #f4faff; }
+      .date-approval h3 { margin: 0 0 5px; color: var(--blue-deep); font-size: 14px; }
+      .date-approval p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
+      .date-approval.pending { border-color: #f4c16b; background: #fff9ed; }
+      .date-approval.approved { border-color: #92d3ac; background: #f0fff5; }
+      .date-approval.rejected { border-color: #e6a3a3; background: #fff5f5; }
       .map-preview { display: none; margin-top: 12px; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; }
       .map-preview.is-visible { display: block; }
       .map-preview iframe { display: block; width: 100%; height: 190px; border: 0; }
@@ -89,7 +96,8 @@
               <div class="map-preview" id="mapPreview"><iframe id="locationMap" title="Selected pickup location" loading="lazy"></iframe><a class="map-link" id="openMapsLink" href="#" target="_blank" rel="noopener">Open location in Google Maps ↗</a></div>
               <label for="pickupNotes">Collection notes <span class="muted">(optional)</span></label><textarea id="pickupNotes" name="notes" placeholder="Access details or anything the driver should know"></textarea>
               <div class="actions"><button class="btn" type="submit">Create ticket</button><button class="btn btn-ghost" type="reset">Clear form</button></div>
-              <label for="pickupDate">Desired pickup date <span class="muted">(optional)</span></label><input id="pickupDate" name="preferredDate" type="date" /><p class="muted date-note">Leave this blank when the date is flexible.</p>
+              <label for="pickupDate">Desired pickup date <span class="muted">(optional)</span></label><input id="pickupDate" name="preferredDate" type="date" /><p class="muted date-note">Leave this blank when the date is flexible.</p><div class="date-actions"><button class="btn btn-ghost" id="checkAvailabilityButton" type="button">Check availability</button><span class="location-note">A selected date is sent to admin for approval.</span></div>
+              <section class="date-approval" id="dateApprovalPanel" aria-live="polite"><h3>Pickup date approval</h3><p id="dateApprovalMessage">Checking your pickup date status…</p></section>
               <p class="status" id="pickupStatus" role="status" aria-live="polite"></p>
             </form>
           </section>
@@ -104,6 +112,9 @@
       const goodsOptions = ['512GB','256GB','128GB','64GB','32GB','16GB','8GB','4GB','CHINESE','TABLET','BIGSMART','IPHONE','CPU','DISPLAY CARDS','BATTERY','HARD DISK','HARD DISK BOARD','RAMS','CAMERA','LAPTOP BOARD','LAPTOP LOW GRADE','ORIGINAL PHONES','COMPUTER 1 ICE','COMPUTER 2 ICE','GREEN BOARD HIGH GRADE','RUBBISH','RUBBISH HIGH GRADE','PRINTERS','CAR BOARD'];
       const pickupStatus = document.getElementById('pickupStatus');
       const pickupDateInput = document.getElementById('pickupDate');
+      const checkAvailabilityButton = document.getElementById('checkAvailabilityButton');
+      const dateApprovalPanel = document.getElementById('dateApprovalPanel');
+      const dateApprovalMessage = document.getElementById('dateApprovalMessage');
       const historyList = document.getElementById('historyList');
       const locationInput = document.getElementById('pickupLocation');
       const locationStatus = document.getElementById('locationStatus');
@@ -113,6 +124,44 @@
       const formatMoney = (value) => `KSh ${Number(value || 0).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
       const formatDate = (value) => new Intl.DateTimeFormat('en-KE', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
       const formatPickupDate = (value) => { if (!value) return 'Flexible'; const date = new Date(`${value}T00:00:00`); return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(date.getTime()) ? new Intl.DateTimeFormat('en-KE', { dateStyle: 'medium' }).format(date) : value; };
+      let currentDateApproval = null;
+
+      function renderDateApproval(data) {
+        const approval = data?.approval || null;
+        currentDateApproval = approval;
+        const locked = Boolean(data?.locked && approval);
+        dateApprovalPanel.className = 'date-approval';
+        if (approval?.status === 'Pending approval') dateApprovalPanel.classList.add('pending');
+        if (approval?.status === 'Approved') dateApprovalPanel.classList.add('approved');
+        if (approval?.status === 'Rejected') dateApprovalPanel.classList.add('rejected');
+        const totalText = Number.isFinite(Number(data?.totalAmount)) ? ` Goods total since last pickup: ${formatMoney(data.totalAmount)}.` : '';
+        if (!approval) {
+          pickupDateInput.disabled = false;
+          checkAvailabilityButton.disabled = false;
+          dateApprovalMessage.textContent = `No pickup date is awaiting approval. Choose a date and check its availability.${totalText}`;
+          return;
+        }
+        pickupDateInput.value = approval.requestedDate || '';
+        pickupDateInput.disabled = locked;
+        checkAvailabilityButton.disabled = locked;
+        if (approval.status === 'Pending approval') dateApprovalMessage.textContent = `Pending approval for ${formatPickupDate(approval.requestedDate)}. You cannot choose another date until admin decides.${totalText}`;
+        else if (approval.status === 'Approved') dateApprovalMessage.textContent = `Approved for ${formatPickupDate(approval.requestedDate)}. You cannot choose another date until this approval is rejected.${totalText}`;
+        else dateApprovalMessage.textContent = `The request for ${formatPickupDate(approval.requestedDate)} was rejected${approval.rejectionReason ? `: ${approval.rejectionReason}.` : '.'} Choose a new date and check availability again.${totalText}`;
+      }
+
+      async function loadDateApproval() {
+        try {
+          const response = await fetch('/api/pickup-date-requests');
+          const result = parseResponse(await response.text());
+          if (response.status === 401) return location.assign('agent-login.html');
+          if (!response.ok) throw new Error(result.error || 'Unable to load pickup date approval.');
+          renderDateApproval(result);
+        } catch (error) {
+          dateApprovalPanel.className = 'date-approval';
+          dateApprovalMessage.textContent = error.message || 'Unable to load pickup date approval.';
+          checkAvailabilityButton.disabled = true;
+        }
+      }
 
       function addGoodsRow() {
         const row = document.createElement('div'); row.className = 'goods-row';
@@ -129,10 +178,11 @@
       function requestTotal(request) { return (request.goods || []).reduce((sum, good) => sum + (Number(good.totalAmount) || (Number(good.quantity) || 0) * (Number(good.amount) || 0)), 0); }
       function renderHistory(requests) { historyList.replaceChildren(); if (!requests.length) { historyList.append(Object.assign(document.createElement('div'), { className: 'empty', textContent: 'No tickets yet.' })); return; } requests.forEach((request) => { const item = document.createElement('article'); item.className = 'history-item'; const head = document.createElement('div'); head.className = 'history-item-head'; const details = document.createElement('div'); const title = document.createElement('h3'); title.textContent = (request.goods || []).map((good) => `${good.name} (${good.quantity})`).join(', ') || 'Pickup ticket'; const location = document.createElement('p'); location.textContent = request.location || 'Location not provided'; details.append(title, location); const badge = document.createElement('span'); badge.className = 'history-status'; badge.textContent = request.status || 'Pending approval'; head.append(details, badge); const meta = document.createElement('div'); meta.className = 'history-meta'; [`${formatDate(request.createdAt)}`, `Pickup date: ${formatPickupDate(request.preferredDate || request.preferredTime)}`, `Quantity: ${(request.goods || []).reduce((sum, good) => sum + (Number(good.quantity) || 0), 0)}`, `Total: ${formatMoney(requestTotal(request))}`].forEach((value) => { const span = document.createElement('span'); span.textContent = value; if (value.startsWith('Total:')) span.className = 'history-total'; meta.append(span); }); item.append(head, meta); historyList.append(item); }); }
       async function loadHistory() { try { const response = await fetch('/api/pickup-requests?requestType=agent'); const result = parseResponse(await response.text()); if (response.status === 401) return location.assign('agent-login.html'); if (!response.ok) throw new Error(result.error || 'Unable to load history.'); renderHistory(result.requests || []); } catch (error) { historyList.replaceChildren(Object.assign(document.createElement('div'), { className: 'empty', textContent: error.message || 'Unable to load history.' })); } }
-      async function loadSession() { try { const response = await fetch('/api/agent-session'); const result = parseResponse(await response.text()); if (!response.ok || !result.agent) return location.assign('agent-login.html'); document.getElementById('agentName').textContent = result.agent.fullName; await loadHistory(); } catch { location.assign('agent-login.html'); } }
+      async function loadSession() { try { const response = await fetch('/api/agent-session'); const result = parseResponse(await response.text()); if (!response.ok || !result.agent) return location.assign('agent-login.html'); document.getElementById('agentName').textContent = result.agent.fullName; await Promise.all([loadHistory(), loadDateApproval()]); } catch { location.assign('agent-login.html'); } }
       document.getElementById('addGoodButton').addEventListener('click', addGoodsRow);
-      form.addEventListener('reset', () => setTimeout(() => { goodsRows.replaceChildren(); addGoodsRow(); pickupStatus.textContent = ''; }, 0));
-      form.addEventListener('submit', async (event) => { event.preventDefault(); const button = form.querySelector('button[type="submit"]'); const data = new FormData(form); const names = data.getAll('goods'); const quantities = data.getAll('quantity'); const amounts = data.getAll('amount'); const goods = names.map((name, index) => ({ name: String(name).trim(), quantity: String(quantities[index] || '').trim(), amount: String(amounts[index] || '').trim() })); const invalid = goods.some((good) => !good.name || !/^\d+$/.test(good.quantity) || Number(good.quantity) < 1 || good.amount === '' || !Number.isFinite(Number(good.amount)) || Number(good.amount) < 0); if (invalid) { pickupStatus.className = 'status error'; pickupStatus.textContent = 'Complete every goods row with a category, whole-number quantity and amount per item.'; return; } if (!String(data.get('location') || '').trim()) { pickupStatus.className = 'status error'; pickupStatus.textContent = 'Add a pickup location.'; return; } button.disabled = true; pickupStatus.className = 'status'; pickupStatus.textContent = 'Creating ticket…'; try { const response = await fetch('/api/pickup-requests', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ requestType: 'agent', goods, preferredDate: data.get('preferredDate') || '', location: data.get('location'), notes: data.get('notes') }) }); const result = parseResponse(await response.text()); if (!response.ok) throw new Error(result.error || 'Unable to create ticket.'); pickupStatus.textContent = 'Ticket created and sent for admin approval.'; form.reset(); mapPreview.classList.remove('is-visible'); locationStatus.textContent = ''; await loadHistory(); } catch (error) { pickupStatus.className = 'status error'; pickupStatus.textContent = error.message || 'Unable to create ticket.'; } finally { button.disabled = false; } });
+      form.addEventListener('reset', () => setTimeout(() => { goodsRows.replaceChildren(); addGoodsRow(); pickupStatus.textContent = ''; loadDateApproval(); }, 0));
+      checkAvailabilityButton.addEventListener('click', async () => { const requestedDate = pickupDateInput.value; if (!requestedDate) { pickupStatus.className = 'status error'; pickupStatus.textContent = 'Choose a pickup date before checking availability.'; pickupDateInput.focus(); return; } checkAvailabilityButton.disabled = true; pickupStatus.className = 'status'; pickupStatus.textContent = 'Sending date for approval…'; try { const response = await fetch('/api/pickup-date-requests', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ requestedDate }) }); const result = parseResponse(await response.text()); if (response.status === 401) return location.assign('agent-login.html'); if (!response.ok) throw new Error(result.error || 'Unable to check pickup date availability.'); pickupStatus.textContent = 'Pickup date sent for admin approval.'; await loadDateApproval(); } catch (error) { pickupStatus.className = 'status error'; pickupStatus.textContent = error.message || 'Unable to check pickup date availability.'; checkAvailabilityButton.disabled = false; } });
+      form.addEventListener('submit', async (event) => { event.preventDefault(); const button = form.querySelector('button[type="submit"]'); const data = new FormData(form); const names = data.getAll('goods'); const quantities = data.getAll('quantity'); const amounts = data.getAll('amount'); const goods = names.map((name, index) => ({ name: String(name).trim(), quantity: String(quantities[index] || '').trim(), amount: String(amounts[index] || '').trim() })); const invalid = goods.some((good) => !good.name || !/^\d+$/.test(good.quantity) || Number(good.quantity) < 1 || good.amount === '' || !Number.isFinite(Number(good.amount)) || Number(good.amount) < 0); if (invalid) { pickupStatus.className = 'status error'; pickupStatus.textContent = 'Complete every goods row with a category, whole-number quantity and amount per item.'; return; } if (!String(data.get('location') || '').trim()) { pickupStatus.className = 'status error'; pickupStatus.textContent = 'Add a pickup location.'; return; } button.disabled = true; pickupStatus.className = 'status'; pickupStatus.textContent = 'Creating ticket…'; try { const response = await fetch('/api/pickup-requests', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ requestType: 'agent', goods, preferredDate: pickupDateInput.value || '', location: data.get('location'), notes: data.get('notes') }) }); const result = parseResponse(await response.text()); if (!response.ok) throw new Error(result.error || 'Unable to create ticket.'); pickupStatus.textContent = 'Ticket created and sent for admin approval.'; form.reset(); mapPreview.classList.remove('is-visible'); locationStatus.textContent = ''; await loadHistory(); } catch (error) { pickupStatus.className = 'status error'; pickupStatus.textContent = error.message || 'Unable to create ticket.'; } finally { button.disabled = false; } });
       document.getElementById('useLocationButton').addEventListener('click', () => { if (!navigator.geolocation) { locationStatus.className = 'status error'; locationStatus.textContent = 'Device location is not supported; enter it manually.'; return; } const button = document.getElementById('useLocationButton'); button.disabled = true; locationStatus.className = 'status'; locationStatus.textContent = 'Finding your location…'; navigator.geolocation.getCurrentPosition((position) => { const { latitude, longitude, accuracy } = position.coords; const mapsUrl = `https://www.google.com/maps?q=${latitude.toFixed(6)},${longitude.toFixed(6)}`; locationInput.value = `GPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)} (accuracy: ±${Math.round(accuracy)} m)`; locationMap.src = `${mapsUrl}&z=17&output=embed`; openMapsLink.href = mapsUrl; mapPreview.classList.add('is-visible'); locationStatus.textContent = `Location captured within approximately ${Math.round(accuracy)} metres.`; button.disabled = false; button.textContent = 'Update device location'; }, () => { locationStatus.className = 'status error'; locationStatus.textContent = 'Location unavailable. Enter the pickup location manually.'; button.disabled = false; }); });
       document.getElementById('logoutButton').addEventListener('click', async () => { await fetch('/api/agent-logout', { method: 'POST' }); location.assign('agent-login.html'); });
       const today = new Date();
