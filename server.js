@@ -2,12 +2,20 @@ const path = require("node:path");
 const fs = require("node:fs/promises");
 const crypto = require("node:crypto");
 const { promisify } = require("node:util");
-require("dotenv").config({
-  path: [
-    path.join(__dirname, ".env"),
-    process.env.MONGODB_CREDENTIALS_FILE || path.join(process.env.USERPROFILE || "", "Downloads", "atlas-credentials.env")
-  ]
-});
+
+const dotenv = require("dotenv");
+
+dotenv.config();
+
+// Keep optional local Atlas credentials outside the repository. Environment
+// variables set by a hosting provider take precedence over this file.
+if (process.env.MONGODB_CREDENTIALS_FILE) {
+  const result = dotenv.config({ path: process.env.MONGODB_CREDENTIALS_FILE });
+  if (result.error) {
+    console.warn("Unable to load MONGODB_CREDENTIALS_FILE:", result.error.message);
+  }
+}
+
 const express = require("express");
 const rateLimit = require("express-rate-limit");
 const helmet = require("helmet");
@@ -15,15 +23,23 @@ const { MongoClient } = require("mongodb");
 const nodemailer = require("nodemailer");
 
 const app = express();
-const port = Number(process.env.PORT) || 3000;
 const emailTo = "aihuishoulimited@gmail.com";
-const sessions = new Map();
 const scrypt = promisify(crypto.scrypt);
-const mongoClient = process.env.MONGODB_URI ? new MongoClient(process.env.MONGODB_URI) : null;
+const sessionSecret = process.env.SESSION_SECRET || (process.env.NODE_ENV === "production" ? "" : crypto.randomBytes(32).toString("hex"));
+
+const mongoClient = process.env.MONGODB_URI
+  ? new MongoClient(process.env.MONGODB_URI)
+  : null;
+
 const database = mongoClient?.db(process.env.MONGODB_DB || "aihuishou");
+
 const accountsCollection = database?.collection("agent_accounts");
 const pickupRequestsCollection = database?.collection("pickup_requests");
+const passwordResetCollection = database?.collection("password_resets");
+const adminAccountsCollection = database?.collection("admin_accounts");
+
 const adminEmail = normalizeConfiguredEmail(process.env.ADMIN_EMAIL);
+
 let databaseReady;
 
 function normalizeConfiguredEmail(email) {
@@ -31,7 +47,9 @@ function normalizeConfiguredEmail(email) {
 }
 
 if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
-  console.warn("SMTP_HOST, SMTP_USER and SMTP_PASS must be set before applications can be sent.");
+  console.warn(
+    "SMTP_HOST, SMTP_USER and SMTP_PASS must be set before applications can be sent."
+  );
 }
 
 const transporter = nodemailer.createTransport({
@@ -45,16 +63,53 @@ const transporter = nodemailer.createTransport({
 });
 
 app.disable("x-powered-by");
+
 app.set("trust proxy", 1);
-app.use(helmet({ contentSecurityPolicy: false }));
-app.use(express.json({ limit: "32kb" }));
-app.use("/data", (req, res) => res.status(404).end());
+
+app.use(
+  helmet({
+    contentSecurityPolicy: false
+  })
+);
+
+app.use(
+  express.json({
+    limit: "32kb"
+  })
+);
+
+app.use("/data", (req, res) => {
+  res.status(404).end();
+});
+
 app.use(express.static(path.join(__dirname)));
 
-const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 20, standardHeaders: "draft-8", legacyHeaders: false });
-const requestLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 30, standardHeaders: "draft-8", legacyHeaders: false });
+// Serve the main website homepage
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "index.html"));
+});
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: "draft-8",
+  legacyHeaders: false
+});
 
-app.get("/health", (req, res) => res.json({ status: "ok" }));
+const requestLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 30,
+  standardHeaders: "draft-8",
+  legacyHeaders: false
+});
+
+app.get("/health", async (req, res) => {
+  try {
+    await ensureDatabase();
+    res.json({ status: "ok", database: "connected" });
+  } catch (error) {
+    res.status(503).json({ status: "unavailable", database: "not connected" });
+  }
+});
 
 app.use("/api", async (req, res, next) => {
   try {
@@ -62,7 +117,10 @@ app.use("/api", async (req, res, next) => {
     return next();
   } catch (error) {
     console.error("Database connection failed:", error.message);
-    return res.status(503).json({ error: "Database is temporarily unavailable." });
+
+    return res.status(503).json({
+      error: "Database is temporarily unavailable."
+    });
   }
 });
 
@@ -70,575 +128,1502 @@ function normalizeEmail(email) {
   return email.trim().toLowerCase();
 }
 
+function calculateRequestTotal(goods) {
+  if (!Array.isArray(goods)) {
+    return 0;
+  }
+
+  return goods.reduce((total, item) => {
+    const storedTotal = Number(item?.totalAmount);
+
+    if (Number.isFinite(storedTotal)) {
+      return total + storedTotal;
+    }
+
+    const quantity = Number(item?.quantity);
+    const amount = Number(item?.amount);
+
+    return Number.isFinite(quantity) && Number.isFinite(amount)
+      ? total + quantity * amount
+      : total;
+  }, 0);
+}
+
 function readCookie(req, name) {
   const cookies = req.headers.cookie || "";
   const prefix = `${name}=`;
-  const value = cookies.split(";").map((item) => item.trim()).find((item) => item.startsWith(prefix));
-  return value ? decodeURIComponent(value.slice(prefix.length)) : null;
+
+  const value = cookies
+    .split(";")
+    .map((item) => item.trim())
+    .find((item) => item.startsWith(prefix));
+
+  return value
+    ? decodeURIComponent(value.slice(prefix.length))
+    : null;
 }
 
 function withoutMongoId(document) {
-  if (!document) return document;
+  if (!document) {
+    return document;
+  }
+
   const { _id, ...value } = document;
+
   return value;
 }
 
 async function readAccounts() {
+  if (!accountsCollection) {
+    throw new Error("MONGODB_URI is not configured.");
+  }
+
+  return (
+    await accountsCollection.find({}).toArray()
+  ).map(withoutMongoId);
+}
+
+async function getAccountByEmail(email) {
   if (!accountsCollection) throw new Error("MONGODB_URI is not configured.");
-  return (await accountsCollection.find({}).toArray()).map(withoutMongoId);
+  return withoutMongoId(await accountsCollection.findOne({ email }));
 }
 
 async function saveAccounts(accounts) {
-  if (!accountsCollection) throw new Error("MONGODB_URI is not configured.");
+  if (!accountsCollection) {
+    throw new Error("MONGODB_URI is not configured.");
+  }
+
   await accountsCollection.deleteMany({});
-  if (accounts.length) await accountsCollection.insertMany(accounts);
+
+  if (accounts.length) {
+    await accountsCollection.insertMany(accounts);
+  }
 }
 
 async function readPickupRequests() {
-  if (!pickupRequestsCollection) throw new Error("MONGODB_URI is not configured.");
-  return (await pickupRequestsCollection.find({}).toArray()).map(withoutMongoId);
+  if (!pickupRequestsCollection) {
+    throw new Error("MONGODB_URI is not configured.");
+  }
+
+  return (
+    await pickupRequestsCollection.find({}).toArray()
+  ).map(withoutMongoId);
 }
 
 async function savePickupRequests(requests) {
-  if (!pickupRequestsCollection) throw new Error("MONGODB_URI is not configured.");
+  if (!pickupRequestsCollection) {
+    throw new Error("MONGODB_URI is not configured.");
+  }
+
   await pickupRequestsCollection.deleteMany({});
-  if (requests.length) await pickupRequestsCollection.insertMany(requests);
+
+  if (requests.length) {
+    await pickupRequestsCollection.insertMany(requests);
+  }
 }
 
 async function migrateJsonData() {
-  if (!database) throw new Error("MONGODB_URI is not configured.");
+  if (!database) {
+    throw new Error("MONGODB_URI is not configured.");
+  }
+
   const migrationCollection = database.collection("migrations");
-  if (await migrationCollection.findOne({ name: "json-to-mongodb-v1" })) return;
+
+  if (
+    await migrationCollection.findOne({
+      name: "json-to-mongodb-v1"
+    })
+  ) {
+    return;
+  }
 
   const files = [
-    { file: path.join(__dirname, "data", "agent-accounts.json"), collection: accountsCollection },
-    { file: path.join(__dirname, "data", "pickup-requests.json"), collection: pickupRequestsCollection }
+    {
+      file: path.join(
+        __dirname,
+        "data",
+        "agent-accounts.json"
+      ),
+      collection: accountsCollection
+    },
+    {
+      file: path.join(
+        __dirname,
+        "data",
+        "pickup-requests.json"
+      ),
+      collection: pickupRequestsCollection
+    }
   ];
+
   for (const item of files) {
     try {
-      const records = JSON.parse(await fs.readFile(item.file, "utf8"));
-      if (Array.isArray(records) && records.length && await item.collection.countDocuments() === 0) {
+      const records = JSON.parse(
+        await fs.readFile(item.file, "utf8")
+      );
+
+      if (
+        Array.isArray(records) &&
+        records.length &&
+        await item.collection.countDocuments() === 0
+      ) {
         await item.collection.insertMany(records);
       }
     } catch (error) {
-      if (error.code !== "ENOENT") throw error;
+      if (error.code !== "ENOENT") {
+        throw error;
+      }
     }
   }
-  await migrationCollection.insertOne({ name: "json-to-mongodb-v1", migratedAt: new Date() });
+
+  await migrationCollection.insertOne({
+    name: "json-to-mongodb-v1",
+    migratedAt: new Date()
+  });
 }
 
 async function ensureDatabase() {
-  if (!mongoClient) throw new Error("MONGODB_URI is required.");
+  if (!mongoClient) {
+    throw new Error("MONGODB_URI is required.");
+  }
+
+  if (process.env.NODE_ENV === "production" && !sessionSecret) {
+    throw new Error("SESSION_SECRET is required in production.");
+  }
+
   if (!databaseReady) {
     databaseReady = (async () => {
       await mongoClient.connect();
-      await database.command({ ping: 1 });
+
+      await database.command({
+        ping: 1
+      });
+
       await migrateJsonData();
+      await Promise.all([
+        accountsCollection.createIndex({ email: 1 }, { unique: true }),
+        pickupRequestsCollection.createIndex({ id: 1 }, { unique: true }),
+        passwordResetCollection.createIndex({ email: 1 }),
+        passwordResetCollection.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
+        adminAccountsCollection.createIndex({ email: 1 }, { unique: true })
+      ]);
     })().catch((error) => {
       databaseReady = undefined;
       throw error;
     });
   }
+
   return databaseReady;
 }
 
-function createSession(res, account) {
-  const token = crypto.randomBytes(32).toString("hex");
-  sessions.set(token, { email: account.email, expiresAt: Date.now() + 1000 * 60 * 60 * 12 });
-  res.cookie("agent_session", token, {
+function createSignedSession(res, cookieName, payload) {
+  if (!sessionSecret) throw new Error("SESSION_SECRET must be configured in production.");
+  const body = Buffer.from(JSON.stringify({ ...payload, expiresAt: Date.now() + 1000 * 60 * 60 * 12 })).toString("base64url");
+  const signature = crypto.createHmac("sha256", sessionSecret).update(body).digest("base64url");
+  res.cookie(cookieName, `${body}.${signature}`, {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
     maxAge: 1000 * 60 * 60 * 12,
     path: "/"
   });
+}
+
+function readSignedSession(req, cookieName) {
+  if (!sessionSecret) return null;
+  const token = readCookie(req, cookieName);
+  if (!token) return null;
+  const [body, signature] = token.split(".");
+  if (!body || !signature) return null;
+  const expected = crypto.createHmac("sha256", sessionSecret).update(body).digest("base64url");
+  const valid = Buffer.from(signature);
+  const expectedBuffer = Buffer.from(expected);
+  if (valid.length !== expectedBuffer.length || !crypto.timingSafeEqual(valid, expectedBuffer)) return null;
+  try {
+    const session = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
+    return session.expiresAt > Date.now() ? session : null;
+  } catch { return null; }
+}
+
+function createSession(res, account) {
+  createSignedSession(res, "agent_session", { email: account.email, role: "agent" });
 }
 
 function createFieldEmployeeSession(res, account) {
-  const token = crypto.randomBytes(32).toString("hex");
-  sessions.set(token, { email: account.email, role: "fieldEmployee", expiresAt: Date.now() + 1000 * 60 * 60 * 12 });
-  res.cookie("field_employee_session", token, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    maxAge: 1000 * 60 * 60 * 12,
-    path: "/"
-  });
+  createSignedSession(res, "field_employee_session", { email: account.email, role: "fieldEmployee" });
 }
 
 function createAdminSession(res) {
-  const token = crypto.randomBytes(32).toString("hex");
-  sessions.set(token, { admin: true, expiresAt: Date.now() + 1000 * 60 * 60 * 12 });
-  res.cookie("admin_session", token, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    maxAge: 1000 * 60 * 60 * 12,
-    path: "/"
-  });
+  createSignedSession(res, "admin_session", { admin: true });
 }
 
 function requireAdmin(req, res, next) {
-  const token = readCookie(req, "admin_session");
-  const session = token && sessions.get(token);
-  if (!session?.admin || session.expiresAt < Date.now()) {
-    if (token) sessions.delete(token);
-    return res.status(401).json({ error: "Please sign in as an administrator." });
+  const session = readSignedSession(req, "admin_session");
+
+  if (
+    !session?.admin ||
+    session.expiresAt < Date.now()
+  ) {
+    return res.status(401).json({
+      error: "Please sign in as an administrator."
+    });
   }
+
   return next();
 }
 
 async function getCurrentAgent(req) {
-  const token = readCookie(req, "agent_session");
-  const session = token && sessions.get(token);
-  if (!session || session.expiresAt < Date.now()) {
-    if (token) sessions.delete(token);
+  const session = readSignedSession(req, "agent_session");
+
+  if (
+    !session ||
+    session.expiresAt < Date.now()
+  ) {
     return null;
   }
 
-  const accounts = await readAccounts();
-  return accounts.find((account) => account.email === session.email) || null;
+  return getAccountByEmail(session.email);
 }
 
 async function requireAgent(req, res, next) {
   try {
     const account = await getCurrentAgent(req);
-    if (!account) return res.status(401).json({ error: "Please sign in to access the agent dashboard." });
+
+    if (!account) {
+      return res.status(401).json({
+        error:
+          "Please sign in to access the agent dashboard."
+      });
+    }
+
     req.agent = account;
+
     return next();
   } catch (error) {
-    console.error("Agent session check failed:", error.message);
-    return res.status(500).json({ error: "Unable to verify your session. Please try again." });
+    console.error(
+      "Agent session check failed:",
+      error.message
+    );
+
+    return res.status(500).json({
+      error:
+        "Unable to verify your session. Please try again."
+    });
   }
 }
 
 async function getCurrentFieldEmployee(req) {
-  const token = readCookie(req, "field_employee_session");
-  const session = token && sessions.get(token);
-  if (!session || session.role !== "fieldEmployee" || session.expiresAt < Date.now()) {
-    if (token) sessions.delete(token);
+  const session = readSignedSession(req, "field_employee_session");
+
+  if (
+    !session ||
+    session.role !== "fieldEmployee" ||
+    session.expiresAt < Date.now()
+  ) {
     return null;
   }
 
-  const accounts = await readAccounts();
-  return accounts.find((account) => account.email === session.email) || null;
+  return getAccountByEmail(session.email);
 }
 
 async function requireFieldEmployee(req, res, next) {
   try {
     const account = await getCurrentFieldEmployee(req);
-    if (!account) return res.status(401).json({ error: "Please sign in as a field employee." });
+
+    if (!account) {
+      return res.status(401).json({
+        error:
+          "Please sign in as a field employee."
+      });
+    }
+
     req.agent = account;
+
     return next();
   } catch (error) {
-    console.error("Field employee session check failed:", error.message);
-    return res.status(500).json({ error: "Unable to verify your session. Please try again." });
+    console.error(
+      "Field employee session check failed:",
+      error.message
+    );
+
+    return res.status(500).json({
+      error:
+        "Unable to verify your session. Please try again."
+    });
   }
 }
 
 async function requirePickupUser(req, res, next) {
   try {
     const agent = await getCurrentAgent(req);
+
     if (agent) {
       req.agent = agent;
       req.requestUserType = "agent";
+
       return next();
     }
-    const fieldEmployee = await getCurrentFieldEmployee(req);
+
+    const fieldEmployee =
+      await getCurrentFieldEmployee(req);
+
     if (fieldEmployee) {
       req.agent = fieldEmployee;
       req.requestUserType = "fieldEmployee";
+
       return next();
     }
-    return res.status(401).json({ error: "Please sign in to submit pickup requests." });
+
+    return res.status(401).json({
+      error:
+        "Please sign in to submit pickup requests."
+    });
   } catch (error) {
-    console.error("Pickup session check failed:", error.message);
-    return res.status(500).json({ error: "Unable to verify your session. Please try again." });
+    console.error(
+      "Pickup session check failed:",
+      error.message
+    );
+
+    return res.status(500).json({
+      error:
+        "Unable to verify your session. Please try again."
+    });
   }
 }
 
-app.post("/api/agent-signup", authLimiter, async (req, res) => {
-  const { fullName, phone, email, company, location, password } = req.body || {};
-  const fields = [fullName, phone, email, location, password];
+app.post(
+  "/api/agent-signup",
+  authLimiter,
+  async (req, res) => {
+    const {
+      fullName,
+      phone,
+      email,
+      company,
+      location,
+      password
+    } = req.body || {};
 
-  if (fields.some((value) => typeof value !== "string" || !value.trim())) {
-    return res.status(400).json({ error: "Full name, phone, email, location and password are required." });
-  }
-  if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
-    return res.status(400).json({ error: "Please provide a valid email address." });
-  }
-  if (password.length < 8) {
-    return res.status(400).json({ error: "Password must be at least 8 characters." });
-  }
+    const fields = [
+      fullName,
+      phone,
+      email,
+      location,
+      password
+    ];
 
-  try {
-    const normalizedEmail = normalizeEmail(email);
-    const accounts = await readAccounts();
-    if (accounts.some((account) => account.email === normalizedEmail)) {
-      return res.status(409).json({ error: "An agent account already exists for this email. Please sign in." });
+    if (
+      fields.some(
+        (value) =>
+          typeof value !== "string" ||
+          !value.trim()
+      )
+    ) {
+      return res.status(400).json({
+        error:
+          "Full name, phone, email, location and password are required."
+      });
     }
 
-    const salt = crypto.randomBytes(16).toString("hex");
-    const passwordHash = (await scrypt(password, salt, 64)).toString("hex");
-    const account = {
-      role: "agent",
-      fullName: fullName.trim(),
-      phone: phone.trim(),
-      email: normalizedEmail,
-      company: typeof company === "string" ? company.trim() : "",
-      location: location.trim(),
-      salt,
-      passwordHash,
-      createdAt: new Date().toISOString()
-    };
-    accounts.push(account);
-    await saveAccounts(accounts);
+    if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
+      return res.status(400).json({
+        error: "Please provide a valid email address."
+      });
+    }
+
+    if (/[<>]/.test(fullName)) {
+      return res.status(400).json({
+        error: "Full name cannot contain angle brackets."
+      });
+    }
+
+    if (password.length < 8) {
+      return res.status(400).json({
+        error:
+          "Password must be at least 8 characters."
+      });
+    }
+
+    try {
+      const normalizedEmail =
+        normalizeEmail(email);
+
+      const salt =
+        crypto.randomBytes(16).toString("hex");
+
+      const passwordHash = (
+        await scrypt(password, salt, 64)
+      ).toString("hex");
+
+      const account = {
+        role: "agent",
+        fullName: fullName.trim(),
+        phone: phone.trim(),
+        email: normalizedEmail,
+        company:
+          typeof company === "string"
+            ? company.trim()
+            : "",
+        location: location.trim(),
+        salt,
+        passwordHash,
+        createdAt:
+          new Date().toISOString()
+      };
+
+      try {
+        await accountsCollection.insertOne(account);
+      } catch (error) {
+        if (error?.code === 11000) {
+          return res.status(409).json({
+            error: "An account already exists for this email. Please sign in."
+          });
+        }
+
+        throw error;
+      }
+
+      const application = [
+        "New Aihuishou agent signup",
+        "",
+        `Full name: ${account.fullName}`,
+        `Phone: ${account.phone}`,
+        `Email: ${account.email}`,
+        `Business/Company: ${
+          account.company || "Not provided"
+        }`,
+        `Location: ${account.location}`
+      ].join("\n");
+
+      try {
+        await transporter.sendMail({
+          from:
+            process.env.SMTP_FROM ||
+            process.env.SMTP_USER,
+          to: emailTo,
+          replyTo: account.email,
+          subject:
+            `New agent signup: ${account.fullName}`,
+          text: application
+        });
+      } catch (mailError) {
+        console.error(
+          "Agent signup email failed:",
+          mailError.message
+        );
+      }
+
+      createSession(res, account);
+
+      return res.status(201).json({
+        message: "Account created.",
+        agent: {
+          fullName: account.fullName,
+          phone: account.phone,
+          email: account.email
+        }
+      });
+    } catch (error) {
+      console.error(
+        "Agent signup failed:",
+        error.message
+      );
+
+      return res.status(500).json({
+        error:
+          "Unable to create your agent account. Please try again."
+      });
+    }
+  }
+);
+
+app.post(
+  "/api/agent-login",
+  authLimiter,
+  async (req, res) => {
+    const { email, password } =
+      req.body || {};
+
+    if (
+      typeof email !== "string" ||
+      typeof password !== "string" ||
+      !email.trim() ||
+      !password
+    ) {
+      return res.status(400).json({
+        error: "Email and password are required."
+      });
+    }
+
+    try {
+      const account = (
+        await readAccounts()
+      ).find(
+        (item) =>
+          item.email ===
+            normalizeEmail(email) &&
+          item.role !== "fieldEmployee"
+      );
+
+      if (!account) {
+        return res.status(401).json({
+          error:
+            "Email or password is incorrect."
+        });
+      }
+
+      const enteredHash = await scrypt(
+        password,
+        account.salt,
+        64
+      );
+
+      const savedHash = Buffer.from(
+        account.passwordHash,
+        "hex"
+      );
+
+      if (
+        savedHash.length !==
+          enteredHash.length ||
+        !crypto.timingSafeEqual(
+          savedHash,
+          enteredHash
+        )
+      ) {
+        return res.status(401).json({
+          error:
+            "Email or password is incorrect."
+        });
+      }
+
+      createSession(res, account);
+
+      return res.json({
+        agent: {
+          fullName: account.fullName,
+          phone: account.phone,
+          email: account.email
+        }
+      });
+    } catch (error) {
+      console.error(
+        "Agent login failed:",
+        error.message
+      );
+
+      return res.status(500).json({
+        error:
+          "Unable to sign in. Please try again."
+      });
+    }
+  }
+);
+
+app.get(
+  "/api/agent-session",
+  requireAgent,
+  (req, res) => {
+    res.json({
+      agent: {
+        fullName:
+          req.agent.fullName,
+        phone: req.agent.phone,
+        email: req.agent.email
+      }
+    });
+  }
+);
+
+app.post(
+  "/api/agent-logout",
+  (req, res) => {
+    res.clearCookie(
+      "agent_session",
+      {
+        path: "/"
+      }
+    );
+
+    res.status(204).end();
+  }
+);
+
+app.post(
+  "/api/field-employee-login",
+  authLimiter,
+  async (req, res) => {
+    const {
+      email,
+      password
+    } = req.body || {};
+
+    if (
+      typeof email !== "string" ||
+      typeof password !== "string" ||
+      !email.trim() ||
+      !password
+    ) {
+      return res.status(400).json({
+        error:
+          "Email and password are required."
+      });
+    }
+
+    try {
+      const account = (
+        await readAccounts()
+      ).find(
+        (item) =>
+          item.email ===
+            normalizeEmail(email) &&
+          item.role === "fieldEmployee"
+      );
+
+      if (!account) {
+        return res.status(401).json({
+          error:
+            "Email or password is incorrect."
+        });
+      }
+
+      const enteredHash =
+        await scrypt(
+          password,
+          account.salt,
+          64
+        );
+
+      const savedHash =
+        Buffer.from(
+          account.passwordHash,
+          "hex"
+        );
+
+      if (
+        savedHash.length !==
+          enteredHash.length ||
+        !crypto.timingSafeEqual(
+          savedHash,
+          enteredHash
+        )
+      ) {
+        return res.status(401).json({
+          error:
+            "Email or password is incorrect."
+        });
+      }
+
+      createFieldEmployeeSession(
+        res,
+        account
+      );
+
+      return res.json({
+        employee: {
+          fullName:
+            account.fullName,
+          phone:
+            account.phone,
+          email:
+            account.email
+        }
+      });
+    } catch (error) {
+      console.error(
+        "Field employee login failed:",
+        error.message
+      );
+
+      return res.status(500).json({
+        error:
+          "Unable to sign in. Please try again."
+      });
+    }
+  }
+);
+
+app.post(
+  "/api/field-employee-signup",
+  authLimiter,
+  async (req, res) => {
+    const {
+      fullName,
+      phone,
+      email,
+      password
+    } = req.body || {};
+
+    const fields = [
+      fullName,
+      phone,
+      email,
+      password
+    ];
+
+    if (
+      fields.some(
+        (value) =>
+          typeof value !== "string" ||
+          !value.trim()
+      )
+    ) {
+      return res.status(400).json({
+        error:
+          "Full name, phone, email and password are required."
+      });
+    }
+
+    if (
+      !/^\S+@\S+\.\S+$/.test(
+        email.trim()
+      )
+    ) {
+      return res.status(400).json({
+        error:
+          "Please provide a valid email address."
+      });
+    }
+
+    if (/[<>]/.test(fullName)) {
+      return res.status(400).json({
+        error: "Full name cannot contain angle brackets."
+      });
+    }
+
+    if (password.length < 8) {
+      return res.status(400).json({
+        error:
+          "Password must be at least 8 characters."
+      });
+    }
+
+    try {
+      const normalizedEmail =
+        normalizeEmail(email);
+
+      const salt =
+        crypto.randomBytes(16).toString("hex");
+
+      const passwordHash = (
+        await scrypt(
+          password,
+          salt,
+          64
+        )
+      ).toString("hex");
+
+      const account = {
+        role: "fieldEmployee",
+        fullName: fullName.trim(),
+        phone: phone.trim(),
+        email: normalizedEmail,
+        company: "",
+        location: "",
+        salt,
+        passwordHash,
+        createdAt:
+          new Date().toISOString()
+      };
+
+      try {
+        await accountsCollection.insertOne(account);
+      } catch (error) {
+        if (error?.code === 11000) {
+          return res.status(409).json({
+            error: "An account already exists for this email. Please sign in."
+          });
+        }
+
+        throw error;
+      }
+
+      try {
+        await transporter.sendMail({
+          from:
+            process.env.SMTP_FROM ||
+            process.env.SMTP_USER,
+          to: emailTo,
+          replyTo: account.email,
+          subject:
+            `New field employee signup: ${account.fullName}`,
+          text:
+            `New Aihuishou field employee signup\n\n` +
+            `Full name: ${account.fullName}\n` +
+            `Phone: ${account.phone}\n` +
+            `Email: ${account.email}`
+        });
+      } catch (mailError) {
+        console.error(
+          "Field employee signup email failed:",
+          mailError.message
+        );
+      }
+
+      createFieldEmployeeSession(
+        res,
+        account
+      );
+
+      return res.status(201).json({
+        employee: {
+          fullName:
+            account.fullName,
+          phone:
+            account.phone,
+          email:
+            account.email
+        }
+      });
+    } catch (error) {
+      console.error(
+        "Field employee signup failed:",
+        error.message
+      );
+
+      return res.status(500).json({
+        error:
+          "Unable to create your field employee account. Please try again."
+      });
+    }
+  }
+);
+
+app.get(
+  "/api/field-employee-session",
+  requireFieldEmployee,
+  (req, res) => {
+    res.json({
+      employee: {
+        fullName:
+          req.agent.fullName,
+        phone:
+          req.agent.phone,
+        email:
+          req.agent.email
+      }
+    });
+  }
+);
+
+app.post(
+  "/api/field-employee-logout",
+  (req, res) => {
+    res.clearCookie(
+      "field_employee_session",
+      {
+        path: "/"
+      }
+    );
+
+    res.status(204).end();
+  }
+);
+
+app.post(
+  "/api/admin-login",
+  authLimiter,
+  async (req, res) => {
+    const {
+      email,
+      password
+    } = req.body || {};
+
+    if (
+      !adminEmail ||
+      !process.env.ADMIN_PASSWORD
+    ) {
+      return res.status(503).json({
+        error:
+          "Admin access has not been configured."
+      });
+    }
+
+    if (normalizeConfiguredEmail(email) !== adminEmail) {
+      return res.status(401).json({
+        error:
+          "Email or password is incorrect."
+      });
+    }
+
+    const configuredPassword = process.env.ADMIN_PASSWORD;
+    const storedAdmin = withoutMongoId(await adminAccountsCollection.findOne({ email: adminEmail }));
+    let passwordMatches = password === configuredPassword;
+    if (storedAdmin?.passwordHash && storedAdmin?.salt) {
+      const enteredHash = await scrypt(password, storedAdmin.salt, 64);
+      const savedHash = Buffer.from(storedAdmin.passwordHash, "hex");
+      passwordMatches = savedHash.length === enteredHash.length && crypto.timingSafeEqual(savedHash, enteredHash);
+    }
+    if (!passwordMatches) return res.status(401).json({ error: "Email or password is incorrect." });
+
+    createAdminSession(res);
+
+    return res.json({
+      message: "Admin signed in."
+    });
+  }
+);
+
+app.get(
+  "/api/admin-session",
+  requireAdmin,
+  (req, res) => {
+    res.json({
+      admin: true
+    });
+  }
+);
+
+app.post(
+  "/api/admin-logout",
+  (req, res) => {
+    res.clearCookie(
+      "admin_session",
+      {
+        path: "/"
+      }
+    );
+
+    res.status(204).end();
+  }
+);
+
+app.post("/api/password-reset/request", authLimiter, async (req, res) => {
+  const email = typeof req.body?.email === "string" ? normalizeEmail(req.body.email) : "";
+  if (!email || !/^\S+@\S+\.\S+$/.test(email)) return res.status(400).json({ error: "Please provide a valid email address." });
+  const account = await getAccountByEmail(email);
+  const isAdmin = email === adminEmail;
+  // Always return the same response so this endpoint cannot disclose registered emails.
+  if (account || isAdmin) {
+    const token = crypto.randomBytes(32).toString("hex");
+    await passwordResetCollection.deleteMany({ email });
+    await passwordResetCollection.insertOne({ email, tokenHash: crypto.createHash("sha256").update(token).digest("hex"), expiresAt: new Date(Date.now() + 60 * 60 * 1000), createdAt: new Date() });
+    const baseUrl = process.env.APP_URL || `${req.protocol}://${req.get("host")}`;
+    try {
+      await transporter.sendMail({ from: process.env.SMTP_FROM || process.env.SMTP_USER, to: email, subject: "Reset your Aihuishou password", text: `Use this link within one hour to reset your password:\n${baseUrl}/password-reset.html?token=${token}&email=${encodeURIComponent(email)}` });
+    } catch (error) { console.error("Password reset email failed:", error.message); }
+  }
+  res.json({ message: "If an account exists for that email, a password-reset link has been sent." });
+});
+
+app.post("/api/password-reset/confirm", authLimiter, async (req, res) => {
+  const { email, token, password } = req.body || {};
+  const normalizedEmail = typeof email === "string" ? normalizeEmail(email) : "";
+  if (!normalizedEmail || typeof token !== "string" || typeof password !== "string" || password.length < 8) return res.status(400).json({ error: "Enter a valid reset link and a password of at least 8 characters." });
+  const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+  const reset = await passwordResetCollection.findOne({ email: normalizedEmail, tokenHash, expiresAt: { $gt: new Date() } });
+  if (!reset) return res.status(400).json({ error: "This reset link is invalid or has expired." });
+  const salt = crypto.randomBytes(16).toString("hex");
+  const passwordHash = (await scrypt(password, salt, 64)).toString("hex");
+  if (normalizedEmail === adminEmail) await adminAccountsCollection.updateOne({ email: normalizedEmail }, { $set: { email: normalizedEmail, salt, passwordHash, updatedAt: new Date() } }, { upsert: true });
+  else {
+    const result = await accountsCollection.updateOne({ email: normalizedEmail }, { $set: { salt, passwordHash, updatedAt: new Date().toISOString() } });
+    if (!result.matchedCount) return res.status(400).json({ error: "This account no longer exists." });
+  }
+  await passwordResetCollection.deleteMany({ email: normalizedEmail });
+  res.json({ message: "Password updated. You can now sign in." });
+});
+
+app.post(
+  "/api/agent-applications",
+  requestLimiter,
+  async (req, res) => {
+    const {
+      fullName,
+      phone,
+      email,
+      company,
+      location
+    } = req.body || {};
+
+    const fields = [
+      fullName,
+      phone,
+      email,
+      location
+    ];
+
+    if (
+      fields.some(
+        (value) =>
+          typeof value !== "string" ||
+          !value.trim()
+      )
+    ) {
+      return res.status(400).json({
+        error:
+          "Full name, phone, email and location are required."
+      });
+    }
+
+    if (
+      !/^\S+@\S+\.\S+$/.test(
+        email.trim()
+      )
+    ) {
+      return res.status(400).json({
+        error:
+          "Please provide a valid email address."
+      });
+    }
 
     const application = [
-      "New Aihuishou agent signup",
+      "New Aihuishou agent application",
       "",
-      `Full name: ${account.fullName}`,
-      `Phone: ${account.phone}`,
-      `Email: ${account.email}`,
-      `Business/Company: ${account.company || "Not provided"}`,
-      `Location: ${account.location}`
+      `Full name: ${fullName.trim()}`,
+      `Phone: ${phone.trim()}`,
+      `Email: ${email.trim()}`,
+      `Business/Company: ${
+        company?.trim() ||
+        "Not provided"
+      }`,
+      `Location: ${location.trim()}`
     ].join("\n");
 
     try {
       await transporter.sendMail({
-        from: process.env.SMTP_FROM || process.env.SMTP_USER,
+        from:
+          process.env.SMTP_FROM ||
+          process.env.SMTP_USER,
         to: emailTo,
-        replyTo: account.email,
-        subject: `New agent signup: ${account.fullName}`,
+        replyTo: email.trim(),
+        subject:
+          `Agent application: ${fullName.trim()}`,
         text: application
       });
-    } catch (mailError) {
-      console.error("Agent signup email failed:", mailError.message);
-    }
 
-    createSession(res, account);
-    return res.status(201).json({
-      message: "Account created.",
-      agent: { fullName: account.fullName, phone: account.phone, email: account.email }
-    });
-  } catch (error) {
-    console.error("Agent signup failed:", error.message);
-    return res.status(500).json({ error: "Unable to create your agent account. Please try again." });
-  }
-});
-
-app.post("/api/agent-login", authLimiter, async (req, res) => {
-  const { email, password } = req.body || {};
-  if (typeof email !== "string" || typeof password !== "string" || !email.trim() || !password) {
-    return res.status(400).json({ error: "Email and password are required." });
-  }
-
-  try {
-    const account = (await readAccounts()).find((item) => item.email === normalizeEmail(email) && item.role !== "fieldEmployee");
-    if (!account) return res.status(401).json({ error: "Email or password is incorrect." });
-
-    const enteredHash = await scrypt(password, account.salt, 64);
-    const savedHash = Buffer.from(account.passwordHash, "hex");
-    if (savedHash.length !== enteredHash.length || !crypto.timingSafeEqual(savedHash, enteredHash)) {
-      return res.status(401).json({ error: "Email or password is incorrect." });
-    }
-
-    createSession(res, account);
-    return res.json({ agent: { fullName: account.fullName, phone: account.phone, email: account.email } });
-  } catch (error) {
-    console.error("Agent login failed:", error.message);
-    return res.status(500).json({ error: "Unable to sign in. Please try again." });
-  }
-});
-
-app.get("/api/agent-session", requireAgent, (req, res) => {
-  res.json({ agent: { fullName: req.agent.fullName, phone: req.agent.phone, email: req.agent.email } });
-});
-
-app.post("/api/agent-logout", (req, res) => {
-  const token = readCookie(req, "agent_session");
-  if (token) sessions.delete(token);
-  res.clearCookie("agent_session", { path: "/" });
-  res.status(204).end();
-});
-
-app.post("/api/field-employee-login", authLimiter, async (req, res) => {
-  const { email, password } = req.body || {};
-  if (typeof email !== "string" || typeof password !== "string" || !email.trim() || !password) {
-    return res.status(400).json({ error: "Email and password are required." });
-  }
-
-  try {
-    const account = (await readAccounts()).find((item) => item.email === normalizeEmail(email) && item.role === "fieldEmployee");
-    if (!account) return res.status(401).json({ error: "Email or password is incorrect." });
-    const enteredHash = await scrypt(password, account.salt, 64);
-    const savedHash = Buffer.from(account.passwordHash, "hex");
-    if (savedHash.length !== enteredHash.length || !crypto.timingSafeEqual(savedHash, enteredHash)) {
-      return res.status(401).json({ error: "Email or password is incorrect." });
-    }
-    createFieldEmployeeSession(res, account);
-    return res.json({ employee: { fullName: account.fullName, phone: account.phone, email: account.email } });
-  } catch (error) {
-    console.error("Field employee login failed:", error.message);
-    return res.status(500).json({ error: "Unable to sign in. Please try again." });
-  }
-});
-
-app.post("/api/field-employee-signup", authLimiter, async (req, res) => {
-  const { fullName, phone, email, password } = req.body || {};
-  const fields = [fullName, phone, email, password];
-  if (fields.some((value) => typeof value !== "string" || !value.trim())) {
-    return res.status(400).json({ error: "Full name, phone, email and password are required." });
-  }
-  if (!/^\S+@\S+\.\S+$/.test(email.trim())) return res.status(400).json({ error: "Please provide a valid email address." });
-  if (password.length < 8) return res.status(400).json({ error: "Password must be at least 8 characters." });
-
-  try {
-    const normalizedEmail = normalizeEmail(email);
-    const accounts = await readAccounts();
-    if (accounts.some((account) => account.email === normalizedEmail)) return res.status(409).json({ error: "An account already exists for this email. Please sign in." });
-    const salt = crypto.randomBytes(16).toString("hex");
-    const passwordHash = (await scrypt(password, salt, 64)).toString("hex");
-    const account = { role: "fieldEmployee", fullName: fullName.trim(), phone: phone.trim(), email: normalizedEmail, company: "", location: "", salt, passwordHash, createdAt: new Date().toISOString() };
-    accounts.push(account);
-    await saveAccounts(accounts);
-    try {
-      await transporter.sendMail({ from: process.env.SMTP_FROM || process.env.SMTP_USER, to: emailTo, replyTo: account.email, subject: `New field employee signup: ${account.fullName}`, text: `New Aihuishou field employee signup\n\nFull name: ${account.fullName}\nPhone: ${account.phone}\nEmail: ${account.email}` });
-    } catch (mailError) { console.error("Field employee signup email failed:", mailError.message); }
-    createFieldEmployeeSession(res, account);
-    return res.status(201).json({ employee: { fullName: account.fullName, phone: account.phone, email: account.email } });
-  } catch (error) {
-    console.error("Field employee signup failed:", error.message);
-    return res.status(500).json({ error: "Unable to create your field employee account. Please try again." });
-  }
-});
-
-app.get("/api/field-employee-session", requireFieldEmployee, (req, res) => {
-  res.json({ employee: { fullName: req.agent.fullName, phone: req.agent.phone, email: req.agent.email } });
-});
-
-app.post("/api/field-employee-logout", (req, res) => {
-  const token = readCookie(req, "field_employee_session");
-  if (token) sessions.delete(token);
-  res.clearCookie("field_employee_session", { path: "/" });
-  res.status(204).end();
-});
-
-app.post("/api/admin-login", authLimiter, (req, res) => {
-  const { email, password } = req.body || {};
-  if (!adminEmail || !process.env.ADMIN_PASSWORD) {
-    return res.status(503).json({ error: "Admin access has not been configured." });
-  }
-  if (normalizeConfiguredEmail(email) !== adminEmail || password !== process.env.ADMIN_PASSWORD) {
-    return res.status(401).json({ error: "Email or password is incorrect." });
-  }
-  createAdminSession(res);
-  return res.json({ message: "Admin signed in." });
-});
-
-app.get("/api/admin-session", requireAdmin, (req, res) => {
-  res.json({ admin: true });
-});
-
-app.post("/api/admin-logout", (req, res) => {
-  const token = readCookie(req, "admin_session");
-  if (token) sessions.delete(token);
-  res.clearCookie("admin_session", { path: "/" });
-  res.status(204).end();
-});
-
-app.post("/api/agent-applications", async (req, res) => {
-  const { fullName, phone, email, company, location } = req.body || {};
-  const fields = [fullName, phone, email, location];
-
-  if (fields.some((value) => typeof value !== "string" || !value.trim())) {
-    return res.status(400).json({ error: "Full name, phone, email and location are required." });
-  }
-
-  if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
-    return res.status(400).json({ error: "Please provide a valid email address." });
-  }
-
-  const application = [
-    "New Aihuishou agent application",
-    "",
-    `Full name: ${fullName.trim()}`,
-    `Phone: ${phone.trim()}`,
-    `Email: ${email.trim()}`,
-    `Business/Company: ${company?.trim() || "Not provided"}`,
-    `Location: ${location.trim()}`
-  ].join("\n");
-
-  try {
-    await transporter.sendMail({
-      from: process.env.SMTP_FROM || process.env.SMTP_USER,
-      to: emailTo,
-      replyTo: email.trim(),
-      subject: `Agent application: ${fullName.trim()}`,
-      text: application
-    });
-
-    return res.status(201).json({ message: "Application received." });
-  } catch (error) {
-    console.error("Agent application email failed:", error.message);
-    return res.status(500).json({ error: "We could not send your application. Please try again later." });
-  }
-});
-
-app.get("/api/pickup-requests", requirePickupUser, async (req, res) => {
-  try {
-    const requests = await readPickupRequests();
-    const agentRequests = requests
-      .filter((request) => request.agentEmail === req.agent.email)
-      .sort((first, second) => new Date(second.createdAt) - new Date(first.createdAt))
-      .map(({ agentEmail, ...request }) => request);
-    return res.json({ requests: agentRequests });
-  } catch (error) {
-    console.error("Pickup history lookup failed:", error.message);
-    return res.status(500).json({ error: "Unable to load pickup history. Please try again." });
-  }
-});
-
-app.get("/api/admin/pickup-requests", requireAdmin, async (req, res) => {
-  try {
-    const requests = await readPickupRequests();
-    const accounts = await readAccounts();
-    const accountByEmail = new Map(accounts.map((account) => [account.email, account]));
-    const adminRequests = requests
-      .sort((first, second) => new Date(second.createdAt) - new Date(first.createdAt))
-      .map((request) => {
-        const agent = accountByEmail.get(request.agentEmail);
-        return {
-          ...request,
-          agent: agent ? { fullName: agent.fullName, phone: agent.phone, email: agent.email, company: agent.company, location: agent.location } : null
-        };
+      return res.status(201).json({
+        message:
+          "Application received."
       });
-    return res.json({ requests: adminRequests });
-  } catch (error) {
-    console.error("Admin pickup history lookup failed:", error.message);
-    return res.status(500).json({ error: "Unable to load pickup requests." });
+    } catch (error) {
+      console.error(
+        "Agent application email failed:",
+        error.message
+      );
+
+      return res.status(500).json({
+        error:
+          "We could not send your application. Please try again later."
+      });
+    }
   }
-});
+);
 
-app.post("/api/pickup-requests", requestLimiter, requirePickupUser, async (req, res) => {
-  const { requestType = "agent", goods, preferredTime, location, notes } = req.body || {};
-  const isFieldEmployee = requestType === "fieldEmployee";
-  const validGoods = Array.isArray(goods) && goods.length > 0 && goods.every((item) => (
-    item && typeof item.name === "string" && item.name.trim() &&
-    (typeof item.quantity === "number" || typeof item.quantity === "string") &&
-    String(item.quantity).trim() && Number(item.quantity) >= 1
-  ));
-  const fields = isFieldEmployee ? [preferredTime] : [preferredTime, location];
+app.get(
+  "/api/pickup-requests",
+  requirePickupUser,
+  async (req, res) => {
+    try {
+      const requests =
+        await readPickupRequests();
 
-  if (requestType !== req.requestUserType || !validGoods || fields.some((value) => typeof value !== "string" || !value.trim())) {
-    return res.status(400).json({ error: "Please add at least one good with a valid quantity and complete the request details." });
+      const agentRequests =
+        requests
+          .filter(
+            (request) =>
+              request.agentEmail ===
+              req.agent.email
+          )
+          .sort(
+            (first, second) =>
+              new Date(
+                second.createdAt
+              ) -
+              new Date(
+                first.createdAt
+              )
+          )
+          .map(
+            ({
+              agentEmail,
+              ...request
+            }) => request
+          );
+
+      return res.json({
+        requests:
+          agentRequests
+      });
+    } catch (error) {
+      console.error(
+        "Pickup history lookup failed:",
+        error.message
+      );
+
+      return res.status(500).json({
+        error:
+          "Unable to load pickup history. Please try again."
+      });
+    }
   }
+);
 
-  const cleanedGoods = goods.map((item) => ({ name: item.name.trim(), quantity: Number(item.quantity) }));
-  const goodsText = cleanedGoods.map((item) => `${item.name}: ${item.quantity}`).join(", ");
+app.get(
+  "/api/admin/pickup-requests",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const requests =
+        await readPickupRequests();
 
-  const pickupRequest = [
-    "New agent pickup request",
-    "",
-    `Agent: ${req.agent.fullName}`,
-    `Phone: ${req.agent.phone}`,
-    `Goods: ${goodsText}`,
-    `Preferred pickup time: ${preferredTime.trim()}`,
-    `Pickup location: ${isFieldEmployee ? "Not provided (field employee)" : location.trim()}`,
-    `Collection notes: ${typeof notes === "string" && notes.trim() ? notes.trim() : "None"}`
-  ].join("\n");
+      const accounts =
+        await readAccounts();
 
-  const savedRequest = {
-    id: crypto.randomUUID(),
-    agentEmail: req.agent.email,
-    requestType,
-    goods: cleanedGoods,
-    preferredTime: preferredTime.trim(),
-    location: isFieldEmployee ? "" : location.trim(),
-    notes: typeof notes === "string" ? notes.trim() : "",
-    status: "Pending approval",
-    createdAt: new Date().toISOString()
-  };
+      const accountByEmail =
+        new Map(
+          accounts.map(
+            (account) => [
+              account.email,
+              account
+            ]
+          )
+        );
 
+      const adminRequests =
+        requests
+          .sort(
+            (first, second) =>
+              new Date(
+                second.createdAt
+              ) -
+              new Date(
+                first.createdAt
+              )
+          )
+          .map((request) => {
+            const agent =
+              accountByEmail.get(
+                request.agentEmail
+              );
+
+            return {
+              ...request,
+              totalAmount: calculateRequestTotal(request.goods),
+              agent: agent
+                ? {
+                    fullName:
+                      agent.fullName,
+                    phone:
+                      agent.phone,
+                    email:
+                      agent.email,
+                    company:
+                      agent.company,
+                    location:
+                      agent.location
+                  }
+                : null
+            };
+          });
+
+      return res.json({
+        requests:
+          adminRequests
+      });
+    } catch (error) {
+      console.error(
+        "Admin pickup history lookup failed:",
+        error.message
+      );
+
+      return res.status(500).json({
+        error:
+          "Unable to load pickup requests."
+      });
+    }
+  }
+);
+
+app.get("/api/admin/accounts", requireAdmin, async (req, res) => {
   try {
-    const requests = await readPickupRequests();
-    requests.push(savedRequest);
-    await savePickupRequests(requests);
-  } catch (error) {
-    console.error("Pickup request storage failed:", error.message);
-    return res.status(500).json({ error: "We could not save your pickup request. Please try again later." });
-  }
-
-  let emailSent = true;
-  try {
-    await transporter.sendMail({
-      from: process.env.SMTP_FROM || process.env.SMTP_USER,
-      to: emailTo,
-      replyTo: req.agent.email,
-      subject: `${isFieldEmployee ? "Field report" : "Pickup request"}: ${cleanedGoods.map((item) => item.name).join(", ")} — ${req.agent.fullName}`,
-      text: pickupRequest
+    const accounts = await accountsCollection.find(
+      {},
+      { projection: { _id: 0, passwordHash: 0, salt: 0 } }
+    ).sort({ fullName: 1 }).toArray();
+    // The current dashboard was built with a static HTML template for this
+    // list. Preserve safety for records created before input validation.
+    res.json({
+      accounts: accounts.map((account) => ({
+        ...account,
+        fullName: String(account.fullName || "").replace(/[<>]/g, "")
+      }))
     });
-
   } catch (error) {
-    emailSent = false;
-    console.error("Pickup request email failed; request remains available in admin dashboard:", error.message);
+    console.error("Admin account lookup failed:", error.message);
+    res.status(500).json({ error: "Unable to load accounts." });
   }
-
-  const { agentEmail, ...responseRequest } = savedRequest;
-  return res.status(201).json({ message: "Pickup request received.", emailSent, request: responseRequest });
 });
 
-app.post("/api/admin/pickup-requests/:id/approve", requireAdmin, async (req, res) => {
+app.delete("/api/admin/accounts/:email", requireAdmin, async (req, res) => {
   try {
-    const requests = await readPickupRequests();
-    const request = requests.find((item) => item.id === req.params.id);
-    if (!request) return res.status(404).json({ error: "Pickup request not found." });
+    const email = normalizeEmail(req.params.email);
+    const result = await accountsCollection.deleteOne({ email });
+    if (!result.deletedCount) return res.status(404).json({ error: "Account not found." });
+    await passwordResetCollection.deleteMany({ email });
+    res.status(204).end();
+  } catch (error) {
+    console.error("Account deletion failed:", error.message);
+    res.status(500).json({ error: "Unable to delete account." });
+  }
+});
 
-    if (request.status !== "Approved") {
-      request.status = "Approved";
-      request.approvedAt = new Date().toISOString();
-      await savePickupRequests(requests);
+app.post(
+  "/api/pickup-requests",
+  requestLimiter,
+  requirePickupUser,
+  async (req, res) => {
+    const {
+      requestType = "agent",
+      goods,
+      preferredTime,
+      location,
+      notes
+    } = req.body || {};
+
+    const isFieldEmployee =
+      requestType ===
+      "fieldEmployee";
+
+    const validGoods =
+      Array.isArray(goods) &&
+      goods.length > 0 &&
+      goods.every(
+        (item) =>
+          item &&
+          typeof item.name ===
+            "string" &&
+          item.name.trim() &&
+          (
+            typeof item.quantity ===
+              "number" ||
+            typeof item.quantity ===
+              "string"
+          ) &&
+          String(
+            item.quantity
+          ).trim() &&
+          Number.isSafeInteger(Number(item.quantity)) &&
+          Number(item.quantity) >= 1 &&
+          (typeof item.amount === "number" || typeof item.amount === "string") &&
+          String(item.amount).trim() &&
+          Number.isFinite(Number(item.amount)) &&
+          Number(item.amount) >= 0
+      );
+
+    const fields =
+      isFieldEmployee
+        ? []
+        : [
+            preferredTime,
+            location
+          ];
+
+    if (
+      requestType !==
+        req.requestUserType ||
+      !validGoods ||
+      fields.some(
+        (value) =>
+          typeof value !==
+            "string" ||
+          !value.trim()
+      )
+    ) {
+      return res.status(400).json({
+        error:
+          "Please add at least one good with a valid quantity and complete the request details."
+      });
     }
 
-    return res.json({ message: "Pickup request approved.", request });
-  } catch (error) {
-    console.error("Pickup request approval failed:", error.message);
-    return res.status(500).json({ error: "Unable to approve pickup request." });
+    const cleanPreferredTime = typeof preferredTime === "string" ? preferredTime.trim() : "";
+    const cleanedGoods =
+      goods.map((item) => ({
+        name: item.name.trim(),
+        quantity:
+          Number(item.quantity),
+        amount: Number(item.amount),
+        totalAmount: Number(item.amount) * Number(item.quantity)
+      }));
+
+    const goodsText =
+      cleanedGoods
+        .map(
+          (item) =>
+            `${item.name}: ${item.quantity} @ ${item.amount} = ${item.totalAmount}`
+        )
+        .join(", ");
+
+    const pickupRequest = [
+      "New agent pickup request",
+      "",
+      `Agent: ${req.agent.fullName}`,
+      `Phone: ${req.agent.phone}`,
+      `Goods: ${goodsText}`,
+      `Preferred pickup time: ${cleanPreferredTime || "Not provided"}`,
+      `Pickup location: ${
+        isFieldEmployee
+          ? "Not provided (field employee)"
+          : location.trim()
+      }`,
+      `Collection notes: ${
+        typeof notes === "string" &&
+        notes.trim()
+          ? notes.trim()
+          : "None"
+      }`
+    ].join("\n");
+
+    const savedRequest = {
+      id: crypto.randomUUID(),
+      agentEmail:
+        req.agent.email,
+      requestType,
+      goods: cleanedGoods,
+      totalAmount: calculateRequestTotal(cleanedGoods),
+      preferredTime: cleanPreferredTime,
+      location:
+        isFieldEmployee
+          ? ""
+          : location.trim(),
+      notes:
+        typeof notes === "string"
+          ? notes.trim()
+          : "",
+      status:
+        "Pending approval",
+      createdAt:
+        new Date().toISOString()
+    };
+
+    try {
+      await pickupRequestsCollection.insertOne(savedRequest);
+    } catch (error) {
+      console.error(
+        "Pickup request storage failed:",
+        error.message
+      );
+
+      return res.status(500).json({
+        error:
+          "We could not save your pickup request. Please try again later."
+      });
+    }
+
+    let emailSent = true;
+
+    try {
+      await transporter.sendMail({
+        from:
+          process.env.SMTP_FROM ||
+          process.env.SMTP_USER,
+        to: emailTo,
+        replyTo:
+          req.agent.email,
+        subject: `${
+          isFieldEmployee
+            ? "Field report"
+            : "Pickup request"
+        }: ${cleanedGoods
+          .map(
+            (item) => item.name
+          )
+          .join(", ")} — ${
+          req.agent.fullName
+        }`,
+        text: pickupRequest
+      });
+    } catch (error) {
+      emailSent = false;
+
+      console.error(
+        "Pickup request email failed; request remains available in admin dashboard:",
+        error.message
+      );
+    }
+
+    const {
+      agentEmail,
+      ...responseRequest
+    } = savedRequest;
+
+    return res.status(201).json({
+      message:
+        "Pickup request received.",
+      emailSent,
+      request:
+        responseRequest
+    });
   }
-});
+);
+
+app.post(
+  "/api/admin/pickup-requests/:id/approve",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const request = withoutMongoId(await pickupRequestsCollection.findOne({ id: req.params.id }));
+
+      if (!request) {
+        return res.status(404).json({
+          error:
+            "Pickup request not found."
+        });
+      }
+
+      if (
+        request.status !==
+        "Approved"
+      ) {
+        request.status = "Approved";
+        request.approvedAt = new Date().toISOString();
+        await pickupRequestsCollection.updateOne({ id: request.id }, { $set: { status: request.status, approvedAt: request.approvedAt } });
+      }
+
+      return res.json({
+        message:
+          "Pickup request approved.",
+        request
+      });
+    } catch (error) {
+      console.error(
+        "Pickup request approval failed:",
+        error.message
+      );
+
+      return res.status(500).json({
+        error:
+          "Unable to approve pickup request."
+      });
+    }
+  }
+);
 
 app.use("/api", (req, res) => {
   res.status(404).json({ error: "API endpoint not found." });
 });
 
-async function initializeDatabase() {
-  if (!mongoClient) {
-    throw new Error("MONGODB_URI is required to start the application.");
+app.use((error, req, res, next) => {
+  console.error("Unhandled request error:", error.message);
+
+  if (res.headersSent) {
+    return next(error);
   }
 
-  await mongoClient.connect();
-  await database.command({ ping: 1 });
+  return res.status(500).json({
+    error: "An unexpected server error occurred. Please try again."
+  });
+});
 
-  await migrateJsonData();
+// Run as a normal local Express server when executed directly.
+// Vercel imports the app instead, so it will not start a second listener.
+const PORT = process.env.PORT || 3000;
 
-  console.log("MongoDB connected successfully.");
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
 }
-
-// Initialize the database when the serverless function starts
-const startupPromise = initializeDatabase().catch((error) => {
-  console.error("Server startup failed:", error.message);
-  throw error;
-});
-
-// Wait for database initialization before handling requests
-app.use(async (req, res, next) => {
-  try {
-    await startupPromise;
-    next();
-  } catch (error) {
-    next(error);
-  }
-});
 
 // Export Express app for Vercel
 module.exports = app;

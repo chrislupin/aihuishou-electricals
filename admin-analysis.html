@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Collection analysis | Aihuishou</title>
+    <link rel="stylesheet" href="styles.css" />
+    <style>
+      * { box-sizing: border-box; }
+      body { margin: 0; font-family: system-ui, sans-serif; }
+      .app { display: grid; grid-template-columns: 255px 1fr; min-height: 100vh; }
+      .side { padding: 25px 18px; background: var(--blue-deep); }
+      .side img { width: 150px; height: 58px; object-fit: contain; }
+      .nav { display: grid; gap: 8px; margin-top: 28px; }
+      .nav a { padding: 12px; border-radius: 8px; color: #dcecff; text-decoration: none; font-size: 14px; font-weight: 700; }
+      .nav a.active, .nav a:hover { background: #ffffff24; color: #fff; }
+      .page { width: min(1240px, calc(100% - 40px)); margin: 0 auto; padding: 28px 0 60px; }
+      .header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; flex-wrap: wrap; }
+      .eyebrow { margin: 0 0 6px; color: var(--orange); font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+      h1, h2 { color: var(--blue-deep); }
+      h1 { margin: 0; font-size: clamp(32px, 5vw, 46px); letter-spacing: -1.8px; }
+      .muted { color: var(--muted); }
+      .btn { padding: 10px 14px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--blue-deep); font: 700 14px inherit; cursor: pointer; }
+      .btn:hover { border-color: var(--orange); }
+      .filters { display: grid; grid-template-columns: repeat(6, minmax(130px, 1fr)); gap: 14px; margin: 26px 0 18px; padding: 18px; border: 1px solid var(--line); border-radius: 14px; background: #fff; box-shadow: 0 10px 24px #14538812; }
+      .filter { display: grid; gap: 6px; }
+      .filter label { color: var(--blue-deep); font-size: 12px; font-weight: 800; }
+      .filter input, .filter select { width: 100%; min-height: 40px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: #f8fcff; font: inherit; }
+      .filter-wide { grid-column: span 2; }
+      .filter-actions { display: flex; align-items: end; }
+      .filter-actions .btn { width: 100%; min-height: 40px; }
+      .custom-date[hidden] { display: none; }
+      .summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin: 18px 0 24px; }
+      .metric { padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: linear-gradient(145deg, #fff, #f1f8ff); }
+      .metric span { display: block; color: var(--muted); font-size: 12px; font-weight: 700; }
+      .metric strong { display: block; margin-top: 6px; color: var(--blue-deep); font-size: clamp(22px, 3vw, 30px); letter-spacing: -1px; }
+      .report-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 24px 0 10px; }
+      .report-head h2 { margin: 0; font-size: 22px; }
+      .count { color: var(--muted); font-size: 13px; }
+      .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; background: #fff; box-shadow: 0 10px 24px #14538812; }
+      table { width: 100%; min-width: 1080px; border-collapse: collapse; }
+      th, td { padding: 14px; border-bottom: 1px solid var(--line); vertical-align: top; text-align: left; }
+      th { position: sticky; top: 0; z-index: 1; background: #f4faff; color: var(--muted); font-size: 11px; letter-spacing: .05em; text-transform: uppercase; }
+      td { color: var(--ink); font-size: 13px; }
+      tbody tr:hover { background: #f8fcff; }
+      .person-name { display: block; color: var(--blue-deep); font-weight: 800; }
+      .subtle { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; }
+      .goods { display: grid; gap: 5px; min-width: 270px; }
+      .good { padding: 6px 8px; border-radius: 7px; background: #f4faff; color: var(--blue-deep); line-height: 1.35; }
+      .amount { color: var(--blue-deep); font-weight: 800; white-space: nowrap; }
+      .badge { display: inline-block; padding: 5px 8px; border-radius: 999px; background: #e5f2ff; color: var(--blue-deep); font-size: 12px; font-weight: 800; white-space: nowrap; }
+      .badge.approved { background: #ddf7e7; color: #126337; }
+      .empty { margin-top: 14px; padding: 22px; border: 1px dashed var(--line); border-radius: 12px; color: var(--muted); text-align: center; }
+      @media (max-width: 1080px) { .filters { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+      @media (max-width: 760px) { .app { grid-template-columns: 1fr; } .side { padding: 14px; } .nav { grid-template-columns: repeat(2, 1fr); margin-top: 8px; } .page { width: min(100% - 28px, 1240px); } .filters, .summary { grid-template-columns: 1fr 1fr; } .filter-wide { grid-column: span 2; } .filter-actions { grid-column: span 2; } }
+      @media (max-width: 480px) { .filters, .summary { grid-template-columns: 1fr; } .filter-wide, .filter-actions { grid-column: auto; } }
+    </style>
+  </head>
+  <body>
+    <main class="app">
+      <aside class="side">
+        <a href="admin-dashboard.html"><img src="images/company-logo.png" alt="Aihuishou Electricals" /></a>
+        <nav class="nav">
+          <a href="admin-dashboard.html">Overview &amp; unapproved</a>
+          <a href="admin-dashboard.html?view=approved-agents">Approved agent requests</a>
+          <a href="admin-dashboard.html?view=approved-fields">Approved field employee requests</a>
+          <a href="admin-dashboard.html?view=accounts">Manage employees and agents</a>
+          <a class="active" href="admin-analysis.html">Analysis</a>
+        </nav>
+      </aside>
+      <section class="page">
+        <header class="header">
+          <div>
+            <p class="eyebrow">Operations analysis</p>
+            <h1>Collection report</h1>
+            <p class="muted">Filter requests, review employees and inspect quantities and values at a glance.</p>
+          </div>
+          <button class="btn" id="logout" type="button">Log out</button>
+        </header>
+
+        <section class="filters" aria-label="Collection report filters">
+          <div class="filter filter-wide">
+            <label for="search">Search</label>
+            <input id="search" type="search" placeholder="Employee, email, good, location or note" />
+          </div>
+          <div class="filter">
+            <label for="person">Employee / agent</label>
+            <select id="person"><option value="">All people</option></select>
+          </div>
+          <div class="filter">
+            <label for="role">Role</label>
+            <select id="role"><option value="">All roles</option><option value="agent">Agent</option><option value="fieldEmployee">Field employee</option></select>
+          </div>
+          <div class="filter">
+            <label for="status">Status</label>
+            <select id="status"><option value="">All statuses</option><option value="Pending approval">Pending approval</option><option value="Approved">Approved</option></select>
+          </div>
+          <div class="filter">
+            <label for="range">Date range</label>
+            <select id="range"><option value="all">All time</option><option value="today">Today</option><option value="last7">Last 7 days</option><option value="month">This month</option><option value="year">This year</option><option value="custom">Custom dates</option></select>
+          </div>
+          <div class="filter custom-date" id="fromWrap" hidden>
+            <label for="from">From</label>
+            <input id="from" type="date" />
+          </div>
+          <div class="filter custom-date" id="toWrap" hidden>
+            <label for="to">To</label>
+            <input id="to" type="date" />
+          </div>
+          <div class="filter-actions"><button class="btn" id="clear" type="button">Clear filters</button></div>
+        </section>
+
+        <section class="summary" aria-label="Filtered report totals">
+          <article class="metric"><span>Requests</span><strong id="requestCount">0</strong></article>
+          <article class="metric"><span>People represented</span><strong id="peopleCount">0</strong></article>
+          <article class="metric"><span>Total quantity</span><strong id="quantityTotal">0</strong></article>
+          <article class="metric"><span>Combined amount</span><strong id="amountTotal">KSh 0.00</strong></article>
+        </section>
+
+        <div class="report-head"><h2>Detailed requests</h2><span class="count" id="resultCount"></span></div>
+        <div id="results"></div>
+      </section>
+    </main>
+    <script>
+      const $ = (selector) => document.querySelector(selector);
+      const controls = {
+        search: $('#search'), person: $('#person'), role: $('#role'), status: $('#status'),
+        range: $('#range'), from: $('#from'), to: $('#to'), fromWrap: $('#fromWrap'), toWrap: $('#toWrap')
+      };
+      let requests = [];
+      let accounts = [];
+
+      const formatDate = (value) => new Intl.DateTimeFormat('en-KE', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
+      const formatCurrency = (value) => `KSh ${Number(value || 0).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      const requestRole = (request) => request.requestType === 'fieldEmployee' ? 'fieldEmployee' : 'agent';
+      const roleLabel = (request) => requestRole(request) === 'fieldEmployee' ? 'Field employee' : 'Agent';
+      const lineTotal = (good) => {
+        const saved = Number(good.totalAmount);
+        if (Number.isFinite(saved)) return saved;
+        const quantity = Number(good.quantity);
+        const amount = Number(good.amount);
+        return Number.isFinite(quantity) && Number.isFinite(amount) ? quantity * amount : 0;
+      };
+      const requestTotal = (request) => {
+        const saved = Number(request.totalAmount);
+        return Number.isFinite(saved) ? saved : (request.goods || []).reduce((total, good) => total + lineTotal(good), 0);
+      };
+      const requestQuantity = (request) => (request.goods || []).reduce((total, good) => total + (Number(good.quantity) || 0), 0);
+      const personName = (request) => request.agent?.fullName || request.agentEmail || 'Unknown person';
+
+      function isInDateRange(request) {
+        const date = new Date(request.createdAt);
+        const now = new Date();
+        const range = controls.range.value;
+        if (range === 'all') return true;
+        if (range === 'today') return date.toDateString() === now.toDateString();
+        if (range === 'last7') {
+          const start = new Date(now);
+          start.setHours(0, 0, 0, 0);
+          start.setDate(start.getDate() - 6);
+          return date >= start && date <= now;
+        }
+        if (range === 'month') return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth();
+        if (range === 'year') return date.getFullYear() === now.getFullYear();
+        if (controls.from.value && date < new Date(`${controls.from.value}T00:00:00`)) return false;
+        if (controls.to.value && date > new Date(`${controls.to.value}T23:59:59.999`)) return false;
+        return true;
+      }
+
+      function filteredRequests() {
+        const query = controls.search.value.trim().toLocaleLowerCase();
+        return requests.filter((request) => {
+          if (controls.person.value && request.agentEmail !== controls.person.value) return false;
+          if (controls.role.value && requestRole(request) !== controls.role.value) return false;
+          if (controls.status.value && request.status !== controls.status.value) return false;
+          if (!isInDateRange(request)) return false;
+          if (!query) return true;
+          const searchable = [personName(request), request.agentEmail, request.location, request.notes, ...(request.goods || []).flatMap((good) => [good.name, good.quantity, good.amount])].join(' ').toLocaleLowerCase();
+          return searchable.includes(query);
+        });
+      }
+
+      function renderSummary(items) {
+        $('#requestCount').textContent = items.length.toLocaleString('en-KE');
+        $('#peopleCount').textContent = new Set(items.map((request) => request.agentEmail)).size.toLocaleString('en-KE');
+        $('#quantityTotal').textContent = items.reduce((total, request) => total + requestQuantity(request), 0).toLocaleString('en-KE');
+        $('#amountTotal').textContent = formatCurrency(items.reduce((total, request) => total + requestTotal(request), 0));
+      }
+
+      function addCell(row, content, className = '') {
+        const cell = document.createElement('td');
+        if (className) cell.className = className;
+        if (typeof content === 'string' || typeof content === 'number') cell.textContent = content;
+        else if (content) cell.append(content);
+        row.append(cell);
+      }
+
+      function renderTable(items) {
+        const target = $('#results');
+        $('#resultCount').textContent = `${items.length.toLocaleString('en-KE')} request${items.length === 1 ? '' : 's'} shown`;
+        if (!items.length) {
+          const empty = document.createElement('div');
+          empty.className = 'empty';
+          empty.textContent = 'No requests match these filters.';
+          target.replaceChildren(empty);
+          return;
+        }
+        const wrap = document.createElement('div');
+        wrap.className = 'table-wrap';
+        const table = document.createElement('table');
+        table.innerHTML = '<thead><tr><th>Date and time</th><th>Employee / agent</th><th>Goods, quantity and line amount</th><th>Total quantity</th><th>Combined amount</th><th>Status</th><th>Pickup details</th></tr></thead>';
+        const body = document.createElement('tbody');
+        items.forEach((request) => {
+          const row = document.createElement('tr');
+          addCell(row, formatDate(request.createdAt));
+          const person = document.createElement('div');
+          person.innerHTML = '<span class="person-name"></span><span class="subtle"></span>';
+          person.querySelector('.person-name').textContent = personName(request);
+          person.querySelector('.subtle').textContent = `${roleLabel(request)} · ${request.agentEmail || 'No email available'}`;
+          addCell(row, person);
+          const goods = document.createElement('div');
+          goods.className = 'goods';
+          (request.goods || []).forEach((good) => {
+            const line = document.createElement('div');
+            line.className = 'good';
+            line.textContent = `${good.name || 'Unnamed good'} × ${Number(good.quantity) || 0} @ ${formatCurrency(good.amount)} = ${formatCurrency(lineTotal(good))}`;
+            goods.append(line);
+          });
+          if (!goods.children.length) goods.textContent = 'No goods recorded';
+          addCell(row, goods);
+          addCell(row, requestQuantity(request).toLocaleString('en-KE'));
+          addCell(row, formatCurrency(requestTotal(request)), 'amount');
+          const badge = document.createElement('span');
+          badge.className = `badge${request.status === 'Approved' ? ' approved' : ''}`;
+          badge.textContent = request.status || 'Pending approval';
+          addCell(row, badge);
+          const details = document.createElement('div');
+          details.textContent = request.location || 'Location not provided';
+          if (request.notes) {
+            const note = document.createElement('span');
+            note.className = 'subtle';
+            note.textContent = request.notes;
+            details.append(note);
+          }
+          addCell(row, details);
+          body.append(row);
+        });
+        table.append(body);
+        wrap.append(table);
+        target.replaceChildren(wrap);
+      }
+
+      function render() {
+        const items = filteredRequests();
+        renderSummary(items);
+        renderTable(items);
+      }
+
+      function updateDateInputs() {
+        const isCustom = controls.range.value === 'custom';
+        controls.fromWrap.hidden = !isCustom;
+        controls.toWrap.hidden = !isCustom;
+        render();
+      }
+
+      function populatePeople() {
+        const known = new Map(accounts.map((account) => [account.email, account]));
+        requests.forEach((request) => {
+          if (!known.has(request.agentEmail)) known.set(request.agentEmail, { email: request.agentEmail, fullName: personName(request), role: requestRole(request) });
+        });
+        [...known.values()].sort((first, second) => String(first.fullName).localeCompare(String(second.fullName))).forEach((account) => {
+          controls.person.add(new Option(`${account.fullName} — ${account.role === 'fieldEmployee' ? 'Field employee' : 'Agent'}`, account.email));
+        });
+      }
+
+      function clearFilters() {
+        controls.search.value = '';
+        controls.person.value = '';
+        controls.role.value = '';
+        controls.status.value = '';
+        controls.range.value = 'all';
+        controls.from.value = '';
+        controls.to.value = '';
+        updateDateInputs();
+      }
+
+      async function load() {
+        try {
+          const [requestResponse, accountResponse] = await Promise.all([fetch('/api/admin/pickup-requests'), fetch('/api/admin/accounts')]);
+          if (requestResponse.status === 401 || accountResponse.status === 401) return location.assign('admin-login.html');
+          const requestData = await requestResponse.json();
+          const accountData = await accountResponse.json();
+          if (!requestResponse.ok) throw new Error(requestData.error || 'Unable to load pickup requests.');
+          if (!accountResponse.ok) throw new Error(accountData.error || 'Unable to load employee accounts.');
+          requests = requestData.requests || [];
+          accounts = accountData.accounts || [];
+          populatePeople();
+          render();
+        } catch (error) {
+          $('#results').replaceChildren(Object.assign(document.createElement('div'), { className: 'empty', textContent: error.message || 'Unable to load the report.' }));
+        }
+      }
+
+      controls.search.addEventListener('input', render);
+      [controls.person, controls.role, controls.status, controls.from, controls.to].forEach((control) => control.addEventListener('change', render));
+      controls.range.addEventListener('change', updateDateInputs);
+      $('#clear').addEventListener('click', clearFilters);
+      $('#logout').addEventListener('click', async () => { await fetch('/api/admin-logout', { method: 'POST' }); location.assign('admin-login.html'); });
+      load();
+    </script>
+  </body>
+</html>

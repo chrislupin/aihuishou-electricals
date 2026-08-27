@@ -3,176 +3,268 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Admin request inbox | Aihuishou Electricals</title>
+    <title>Admin | Aihuishou</title>
     <link rel="stylesheet" href="styles.css" />
     <style>
       * { box-sizing: border-box; }
-      body { margin: 0; min-height: 100vh; font-family: 'Space Grotesk', system-ui, sans-serif; }
-      .admin-shell { width: min(1120px, calc(100% - 36px)); margin: 0 auto; padding: 22px 0 62px; }
-      .admin-header, .heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-      .portal-logo { width: 154px; height: 58px; object-fit: contain; object-position: left center; }
-      .header-actions { display: flex; gap: 10px; align-items: center; }
-      .btn { display: inline-flex; align-items: center; justify-content: center; padding: 11px 16px; border: 1px solid transparent; border-radius: 8px; background: var(--orange); color: #fff; font: 700 14px inherit; cursor: pointer; }
-      .btn-ghost { background: rgba(255,255,255,.65); color: var(--blue-deep); border-color: var(--line); }
-      .eyebrow { color: var(--orange); font: 500 11px 'DM Mono', monospace; letter-spacing: 1.4px; text-transform: uppercase; }
-      h1 { margin: 8px 0 4px; color: var(--blue-deep); font-size: clamp(30px, 5vw, 48px); letter-spacing: -2px; }
-      h2, h3 { color: var(--blue-deep); }
-      .muted { margin: 0; color: var(--muted); font-size: 14px; }
-      .heading { align-items: end; margin: 40px 0 22px; }
-      .date-controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 26px 0 18px; }
-      .date-controls label { color: var(--blue-deep); font: 700 13px inherit; }
-      .date-controls select { width: auto; min-width: 230px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: rgba(255,255,255,.8); color: var(--ink); font: 600 13px inherit; }
-      .request-section { margin-top: 24px; }
-      .request-section h2 { margin: 0 0 10px; font-size: 21px; }
-      .request-section h2 span { color: var(--muted); font: 500 12px 'DM Mono', monospace; }
-      .request-list { display: grid; gap: 14px; }
-      .request-list.is-empty { display: block; }
-      .request-card { padding: 20px; border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,.88); box-shadow: 0 14px 34px rgba(20,83,136,.09); }
-      .request-top { display: flex; align-items: start; justify-content: space-between; gap: 18px; }
-      .request-top h2 { margin: 0 0 5px; font-size: 19px; }
-      .request-status, .request-role { padding: 6px 9px; border-radius: 999px; color: var(--blue-deep); font: 500 10px 'DM Mono', monospace; white-space: nowrap; }
-      .request-status { background: rgba(111,231,255,.35); }
-      .request-role { display: inline-block; margin-top: 7px; background: rgba(35,103,255,.12); }
-      .approve-button { margin-top: 16px; }
-      .request-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 18px; }
-      .request-detail { padding-top: 12px; border-top: 1px solid var(--line); }
-      .request-detail strong { display: block; margin-bottom: 4px; color: var(--muted); font: 500 10px 'DM Mono', monospace; letter-spacing: .5px; text-transform: uppercase; }
-      .goods-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
-      .goods-list li { display: flex; justify-content: space-between; gap: 12px; color: var(--ink); font-size: 14px; }
-      .goods-list span { color: var(--orange); font-weight: 700; white-space: nowrap; }
-      .empty, .error { padding: 28px; border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,.82); color: var(--muted); }
-      .error { color: #b42318; }
-      @media (max-width: 720px) { .heading, .request-top { align-items: flex-start; flex-direction: column; } .request-grid { grid-template-columns: 1fr; } }
+      body { margin: 0; font-family: system-ui, sans-serif; }
+      .app { display: grid; grid-template-columns: 255px 1fr; min-height: 100vh; }
+      .side { padding: 25px 18px; background: var(--blue-deep); }
+      .side img { width: 150px; height: 58px; object-fit: contain; }
+      .nav { display: grid; gap: 8px; margin-top: 28px; }
+      .nav a { padding: 12px; border-radius: 8px; color: #dcecff; text-decoration: none; font-size: 14px; font-weight: 700; }
+      .nav a.active, .nav a:hover { background: #ffffff24; color: #fff; }
+      .page { width: min(1020px, calc(100% - 40px)); margin: 0 auto; padding: 28px 0 60px; }
+      .header, .filters, .account { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+      .btn { padding: 10px 14px; border: 1px solid transparent; border-radius: 8px; background: var(--orange); color: #fff; font: 700 14px inherit; cursor: pointer; }
+      .btn:disabled { cursor: default; opacity: .7; }
+      .ghost { border-color: var(--line); background: #fff; color: var(--blue-deep); }
+      .danger { background: #b42318; }
+      h1, h2, h3 { color: var(--blue-deep); }
+      .muted { color: var(--muted); }
+      .filters { justify-content: flex-start; margin: 25px 0; }
+      .filters select { padding: 10px; border: 1px solid var(--line); border-radius: 8px; font: inherit; }
+      .filters label { color: var(--blue-deep); font-size: 13px; font-weight: 700; }
+      .card, .empty { margin: 12px 0; padding: 18px; border: 1px solid var(--line); border-radius: 14px; background: #fff; box-shadow: 0 10px 24px #14538812; }
+      .summary { width: 100%; margin: 12px 0 28px; border: 1px solid var(--line); border-collapse: collapse; background: #fff; }
+      .summary th, .summary td { padding: 11px; border-bottom: 1px solid var(--line); text-align: left; }
+      .summary th { color: var(--muted); font-size: 11px; text-transform: uppercase; }
+      .request-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+      .request-top h3 { margin: 0; }
+      .request-top p { margin: 5px 0 0; }
+      .badge { display: inline-block; padding: 5px 8px; border-radius: 999px; background: #e5f2ff; color: var(--blue-deep); font-size: 12px; font-weight: 700; }
+      .details { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
+      .details div { padding-top: 8px; border-top: 1px solid var(--line); }
+      .details strong { display: block; color: var(--muted); font-size: 11px; text-transform: uppercase; }
+      .request-total { color: var(--blue-deep); font-size: 18px; font-weight: 800; }
+      .actions { margin-top: 16px; }
+      @media (max-width: 900px) { .details { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+      @media (max-width: 760px) { .app { grid-template-columns: 1fr; } .side { padding: 14px; } .nav { grid-template-columns: repeat(2, 1fr); margin-top: 8px; } .page { width: min(100% - 28px, 1020px); } .details { grid-template-columns: 1fr; } }
     </style>
   </head>
   <body>
-    <main class="admin-shell">
-      <header class="admin-header"><a href="index.html"><img class="portal-logo" src="images/company-logo.png" alt="Aihuishou Electricals" /></a><div class="header-actions"><button class="btn btn-ghost" id="refreshButton" type="button">Refresh</button><button class="btn btn-ghost" id="logoutButton" type="button">Log out</button></div></header>
-      <section class="heading"><div><div class="eyebrow">Operations console</div><h1>Pickup request inbox</h1><p class="muted">Requests are grouped by date and approval status.</p></div></section>
-      <div class="date-controls"><label for="requestDate">Request date</label><select id="requestDate"><option>Loading dates...</option></select></div>
-      <section class="request-section"><h2>Unapproved requests <span id="pendingCount"></span></h2><div class="request-list" id="pendingList" aria-live="polite"><div class="empty">Loading requests...</div></div></section>
-      <section class="request-section"><h2>Approved requests <span id="approvedCount"></span></h2><div class="request-list" id="approvedList" aria-live="polite"></div></section>
+    <main class="app">
+      <aside class="side">
+        <a href="admin-dashboard.html"><img src="images/company-logo.png" alt="Aihuishou Electricals" /></a>
+        <nav class="nav">
+          <a data-view="overview" href="admin-dashboard.html">Overview &amp; unapproved</a>
+          <a data-view="approved-agents" href="admin-dashboard.html?view=approved-agents">Approved agent requests</a>
+          <a data-view="approved-fields" href="admin-dashboard.html?view=approved-fields">Approved field employee requests</a>
+          <a data-view="accounts" href="admin-dashboard.html?view=accounts">Manage employees and agents</a>
+          <a href="admin-analysis.html">Analysis</a>
+        </nav>
+      </aside>
+      <section class="page">
+        <header class="header">
+          <h1 id="title"></h1>
+          <div>
+            <button class="btn ghost" id="refresh" type="button">Refresh</button>
+            <button class="btn ghost" id="logout" type="button">Log out</button>
+          </div>
+        </header>
+        <div id="view"></div>
+      </section>
     </main>
     <script>
-      const pendingList = document.getElementById('pendingList');
-      const approvedList = document.getElementById('approvedList');
-      const requestDate = document.getElementById('requestDate');
-      const pendingCount = document.getElementById('pendingCount');
-      const approvedCount = document.getElementById('approvedCount');
-      let allRequests = [];
+      const $ = (selector) => document.querySelector(selector);
+      const viewName = new URLSearchParams(location.search).get('view') || 'overview';
+      const root = $('#view');
+      const titles = {
+        overview: 'Pickup request inbox',
+        'approved-agents': 'Approved agent requests',
+        'approved-fields': 'Approved field employee requests',
+        accounts: 'Manage employees and agents'
+      };
+      let requests = [];
+      let accounts = [];
 
-      function dateKey(dateString) {
-        const date = new Date(dateString);
-        return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+      $('#title').textContent = titles[viewName] || titles.overview;
+      document.querySelector(`[data-view="${viewName}"]`)?.classList.add('active');
+
+      const isField = (request) => request.requestType === 'fieldEmployee';
+      const roleName = (request) => isField(request) ? 'Field employee' : 'Agent';
+      const formatDate = (value) => new Intl.DateTimeFormat('en-KE', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
+      const formatAmount = (amount) => Number(amount || 0).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const requestTotal = (request) => {
+        const saved = Number(request.totalAmount);
+        if (Number.isFinite(saved)) return saved;
+        return (request.goods || []).reduce((total, good) => {
+          const lineTotal = Number(good.totalAmount);
+          if (Number.isFinite(lineTotal)) return total + lineTotal;
+          const quantity = Number(good.quantity);
+          const amount = Number(good.amount);
+          return Number.isFinite(quantity) && Number.isFinite(amount) ? total + quantity * amount : total;
+        }, 0);
+      };
+
+      function showEmpty(container, message) {
+        const empty = document.createElement('div');
+        empty.className = 'empty';
+        empty.textContent = message;
+        container.replaceChildren(empty);
       }
 
-      function formatDateLabel(key) {
-        const [year, month, day] = key.split('-').map(Number);
-        return new Intl.DateTimeFormat('en-KE', { dateStyle: 'full' }).format(new Date(year, month - 1, day));
-      }
-
-      function requestRole(request) {
-        return request.requestType === 'fieldEmployee' ? 'Field employee' : 'Agent';
-      }
-
-      function addEmptyMessage(list, message) {
-        list.className = 'request-list is-empty';
-        list.append(Object.assign(document.createElement('div'), { className: 'empty', textContent: message }));
-      }
-
-      function renderRequest(request) {
-        const card = document.createElement('article');
-        card.className = 'request-card';
-        const goods = Array.isArray(request.goods) ? request.goods : [{ name: request.goods, quantity: request.quantity }];
+      function requestCard(request) {
         const agent = request.agent || {};
-        card.innerHTML = `<div class="request-top"><div><h2></h2><p class="muted"></p><span class="request-role"></span></div><span class="request-status"></span></div><div class="request-grid"><div class="request-detail"><strong>Agent</strong><span class="agent-value"></span></div><div class="request-detail"><strong>Contact</strong><span class="contact-value"></span></div><div class="request-detail"><strong>Goods</strong><ul class="goods-list"></ul></div><div class="request-detail"><strong>Pickup time</strong><span class="time-value"></span></div><div class="request-detail"><strong>Notes</strong><span class="notes-value"></span></div></div><button class="btn approve-button" type="button"></button>`;
-        card.querySelector('h2').textContent = agent.company || agent.fullName || 'Agent pickup request';
-        card.querySelector('.muted').textContent = new Intl.DateTimeFormat('en-KE', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(request.createdAt));
-        card.querySelector('.request-status').textContent = request.status;
-        card.querySelector('.request-role').textContent = request.requestType === 'fieldEmployee' ? 'Field employee' : 'Agent pickup';
-        card.querySelector('.agent-value').textContent = agent.fullName || 'Unknown agent';
-        card.querySelector('.contact-value').textContent = [agent.email, agent.phone].filter(Boolean).join(' · ') || 'Not available';
-        card.querySelector('.time-value').textContent = request.preferredTime;
-        card.querySelector('.notes-value').textContent = request.notes || 'None';
-        const goodsList = card.querySelector('.goods-list');
-        goods.forEach((good) => { const li = document.createElement('li'); li.textContent = good.name || 'Unknown good'; const quantity = document.createElement('span'); quantity.textContent = good.quantity; li.append(quantity); goodsList.append(li); });
-        const location = document.createElement('div');
-        location.className = 'request-detail';
-        location.innerHTML = '<strong>Pickup location</strong><span></span>';
-        location.querySelector('span').textContent = request.location;
-        card.querySelector('.request-grid').append(location);
-        const approveButton = card.querySelector('.approve-button');
-        approveButton.textContent = request.status === 'Approved' ? 'Approved' : 'Approve request';
-        approveButton.disabled = request.status === 'Approved';
-        approveButton.addEventListener('click', async () => {
-          approveButton.disabled = true;
-          approveButton.textContent = 'Approving...';
-          try {
+        const card = document.createElement('article');
+        card.className = 'card';
+        card.innerHTML = '<div class="request-top"><div><h3></h3><p class="muted"></p></div><span class="badge"></span></div><div class="details"><div><strong>Employee / agent</strong><span class="name"></span></div><div><strong>Goods and number</strong><span class="goods"></span></div><div><strong>Combined total amount</strong><span class="request-total"></span></div><div><strong>Pickup time</strong><span class="time"></span></div><div><strong>Location / notes</strong><span class="notes"></span></div></div><div class="actions"></div>';
+        card.querySelector('h3').textContent = `${roleName(request)} request`;
+        card.querySelector('.muted').textContent = formatDate(request.createdAt);
+        card.querySelector('.badge').textContent = request.status || 'Pending approval';
+        card.querySelector('.name').textContent = agent.fullName || request.agentEmail || '—';
+        card.querySelector('.goods').textContent = (request.goods || []).map((good) => `${good.name}: ${good.quantity}`).join(', ') || '—';
+        card.querySelector('.request-total').textContent = formatAmount(requestTotal(request));
+        card.querySelector('.time').textContent = request.preferredTime || 'Not provided';
+        card.querySelector('.notes').textContent = [request.location, request.notes].filter(Boolean).join(' · ') || '—';
+
+        if (request.status !== 'Approved') {
+          const approve = document.createElement('button');
+          approve.className = 'btn';
+          approve.type = 'button';
+          approve.textContent = 'Approve request';
+          approve.addEventListener('click', async () => {
+            approve.disabled = true;
             const response = await fetch(`/api/admin/pickup-requests/${encodeURIComponent(request.id)}/approve`, { method: 'POST' });
-            const result = await response.json();
-            if (!response.ok) throw new Error(result.error || 'Unable to approve request.');
-            await loadRequests();
-          } catch (error) {
-            approveButton.disabled = false;
-            approveButton.textContent = 'Approve request';
-            window.alert(error.message || 'Unable to approve request.');
-          }
-        });
+            if (!response.ok) {
+              const result = await response.json().catch(() => ({}));
+              alert(result.error || 'Unable to approve this request.');
+              approve.disabled = false;
+              return;
+            }
+            load();
+          });
+          card.querySelector('.actions').append(approve);
+        }
+
         return card;
       }
 
-      function renderGroup(list, requests, role) {
-        const group = requests.filter((request) => requestRole(request) === role);
-        list.className = 'request-list';
-        list.replaceChildren();
-        if (!group.length) {
-          addEmptyMessage(list, `No ${role.toLowerCase()} requests for this date.`);
+      function listRequests(container, items, emptyMessage) {
+        if (!items.length) {
+          showEmpty(container, emptyMessage);
           return;
         }
-        group.forEach((request) => list.append(renderRequest(request)));
+        container.replaceChildren(...items.map(requestCard));
       }
 
-      function appendRoleGroup(parent, requests, role) {
-        parent.append(Object.assign(document.createElement('h3'), { textContent: `${role} requests` }));
-        const list = document.createElement('div');
-        renderGroup(list, requests, role);
-        parent.append(...list.childNodes);
+      function renderSummary(items) {
+        const target = $('#summary');
+        const people = new Map();
+        items.forEach((request) => {
+          const agent = request.agent || {};
+          const id = request.agentEmail || agent.email || 'unknown';
+          const person = people.get(id) || { name: agent.fullName || id, role: roleName(request), goods: new Map(), total: 0 };
+          (request.goods || []).forEach((good) => person.goods.set(good.name, (person.goods.get(good.name) || 0) + (Number(good.quantity) || 0)));
+          person.total += requestTotal(request);
+          people.set(id, person);
+        });
+        if (!people.size) {
+          showEmpty(target, 'No goods were recorded for this selection.');
+          return;
+        }
+        const table = document.createElement('table');
+        table.className = 'summary';
+        table.innerHTML = '<thead><tr><th>Employee / agent</th><th>Role</th><th>Goods and total number</th><th>Combined amount</th></tr></thead>';
+        const body = document.createElement('tbody');
+        people.forEach((person) => {
+          const row = document.createElement('tr');
+          [person.name, person.role, [...person.goods].map(([name, quantity]) => `${name}: ${quantity}`).join(', '), formatAmount(person.total)].forEach((value) => {
+            const cell = document.createElement('td');
+            cell.textContent = value;
+            row.append(cell);
+          });
+          body.append(row);
+        });
+        table.append(body);
+        target.replaceChildren(table);
       }
 
-      function renderSelectedDate() {
-        const selectedDate = requestDate.value;
-        const requests = allRequests.filter((request) => dateKey(request.createdAt) === selectedDate);
-        const pending = requests.filter((request) => request.status !== 'Approved');
-        const approved = requests.filter((request) => request.status === 'Approved');
-        pendingCount.textContent = `(${pending.length})`;
-        approvedCount.textContent = `(${approved.length})`;
-        pendingList.replaceChildren();
-        approvedList.replaceChildren();
-        appendRoleGroup(pendingList, pending, 'Agent');
-        appendRoleGroup(pendingList, pending, 'Field employee');
-        appendRoleGroup(approvedList, approved, 'Agent');
-        appendRoleGroup(approvedList, approved, 'Field employee');
+      function renderFiltersAndRequests() {
+        root.innerHTML = '<section class="filters"><label>Person <select id="person"><option value="">All employees and agents</option></select></label><label>Status <select id="status"><option value="all">All statuses</option><option value="Pending approval">Pending approval</option><option value="Approved">Approved</option></select></label></section>' + (viewName === 'overview' ? '<h2>Selected collection summary</h2><div id="summary"></div><h2>Unapproved agent requests</h2><div id="agents"></div><h2>Unapproved field employee requests</h2><div id="fields"></div>' : '<p class="muted">Only approved requests are displayed on this page.</p><div id="results"></div>');
+        const personSelect = $('#person');
+        accounts.forEach((account) => personSelect.add(new Option(`${account.fullName} — ${account.role === 'fieldEmployee' ? 'Field employee' : 'Agent'}`, account.email)));
+        const statusSelect = $('#status');
+        const draw = () => {
+          let selected = requests.filter((request) => (!personSelect.value || request.agentEmail === personSelect.value) && (statusSelect.value === 'all' || request.status === statusSelect.value));
+          if (viewName === 'overview') {
+            renderSummary(selected);
+            selected = selected.filter((request) => request.status !== 'Approved');
+            listRequests($('#agents'), selected.filter((request) => !isField(request)), 'No unapproved agent requests match these filters.');
+            listRequests($('#fields'), selected.filter(isField), 'No unapproved field employee requests match these filters.');
+          } else {
+            listRequests($('#results'), selected, 'No requests match these filters.');
+          }
+        };
+        personSelect.addEventListener('change', draw);
+        statusSelect.addEventListener('change', draw);
+        draw();
       }
 
-      async function loadRequests() {
+      function renderAccounts() {
+        root.innerHTML = '<p class="muted">Deleting an account permanently removes its login access. Existing request records are retained.</p><div id="accounts"></div>';
+        const target = $('#accounts');
+        if (!accounts.length) {
+          showEmpty(target, 'No accounts have been created yet.');
+          return;
+        }
+        accounts.forEach((account) => {
+          const card = document.createElement('article');
+          card.className = 'card account';
+          const details = document.createElement('div');
+          const name = document.createElement('strong');
+          const meta = document.createElement('div');
+          name.textContent = account.fullName;
+          meta.className = 'muted';
+          meta.textContent = `${account.role === 'fieldEmployee' ? 'Field employee' : 'Agent'} · ${account.email}`;
+          details.append(name, meta);
+          const remove = document.createElement('button');
+          remove.className = 'btn danger';
+          remove.type = 'button';
+          remove.textContent = 'Delete account';
+          remove.addEventListener('click', async () => {
+            if (!confirm(`Delete ${account.fullName}'s account? This cannot be undone.`)) return;
+            const response = await fetch(`/api/admin/accounts/${encodeURIComponent(account.email)}`, { method: 'DELETE' });
+            if (!response.ok) {
+              const result = await response.json().catch(() => ({}));
+              alert(result.error || 'Unable to delete this account.');
+              return;
+            }
+            load();
+          });
+          card.append(details, remove);
+          target.append(card);
+        });
+      }
+
+      async function load() {
+        root.replaceChildren();
         try {
-          const response = await fetch('/api/admin/pickup-requests');
-          const result = await response.json();
-          if (!response.ok) { if (response.status === 401) return window.location.assign('admin-login.html'); throw new Error(result.error || 'Unable to load requests.'); }
-          allRequests = result.requests.sort((first, second) => new Date(second.createdAt) - new Date(first.createdAt));
-          const today = dateKey(new Date().toISOString());
-          const dates = [today, ...new Set(allRequests.map((request) => dateKey(request.createdAt)).filter((date) => date !== today))];
-          requestDate.replaceChildren();
-          if (!allRequests.length) { requestDate.append(Object.assign(document.createElement('option'), { value: today, textContent: formatDateLabel(today) })); addEmptyMessage(pendingList, 'No pickup requests have been submitted yet.'); return; }
-          dates.forEach((date) => requestDate.append(Object.assign(document.createElement('option'), { value: date, textContent: formatDateLabel(date) })));
-          requestDate.value = today;
-          renderSelectedDate();
-        } catch (error) { pendingList.replaceChildren(Object.assign(document.createElement('div'), { className: 'error', textContent: error.message || 'Unable to load requests.' })); }
+          const [requestResponse, accountResponse] = await Promise.all([fetch('/api/admin/pickup-requests'), fetch('/api/admin/accounts')]);
+          if (requestResponse.status === 401 || accountResponse.status === 401) {
+            location.assign('admin-login.html');
+            return;
+          }
+          const requestData = await requestResponse.json();
+          const accountData = await accountResponse.json();
+          if (!requestResponse.ok) throw new Error(requestData.error || 'Unable to load pickup requests.');
+          if (!accountResponse.ok) throw new Error(accountData.error || 'Unable to load accounts.');
+          requests = requestData.requests || [];
+          accounts = accountData.accounts || [];
+          if (viewName === 'approved-agents') requests = requests.filter((request) => !isField(request) && request.status === 'Approved');
+          if (viewName === 'approved-fields') requests = requests.filter((request) => isField(request) && request.status === 'Approved');
+          viewName === 'accounts' ? renderAccounts() : renderFiltersAndRequests();
+        } catch (error) {
+          showEmpty(root, error.message || 'Unable to load the admin dashboard.');
+        }
       }
-      requestDate.addEventListener('change', renderSelectedDate);
-      document.getElementById('refreshButton').addEventListener('click', loadRequests);
-      document.getElementById('logoutButton').addEventListener('click', async () => { await fetch('/api/admin-logout', { method: 'POST' }); window.location.assign('admin-login.html'); });
-      loadRequests();
+
+      $('#refresh').addEventListener('click', load);
+      $('#logout').addEventListener('click', async () => {
+        await fetch('/api/admin-logout', { method: 'POST' });
+        location.assign('admin-login.html');
+      });
+      load();
     </script>
   </body>
 </html>

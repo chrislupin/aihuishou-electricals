@@ -7,6 +7,14 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: MONGODB_URI
+        sync: false
+      - key: MONGODB_DB
+        value: aihuishou
+      - key: SESSION_SECRET
+        sync: false
+      - key: APP_URL
+        sync: false
       - key: SMTP_HOST
         value: smtp.gmail.com
       - key: SMTP_PORT

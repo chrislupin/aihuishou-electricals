@@ -32,7 +32,7 @@
       input:focus, select:focus, textarea:focus { outline: 0; border-color: var(--orange); box-shadow: 0 0 0 3px rgba(35,103,255,.12); }
       .goods-fieldset { margin: 17px 0 0; padding: 0; border: 0; }
       .goods-fieldset legend { margin-bottom: 6px; color: var(--blue-deep); font-size: 13px; font-weight: 700; }
-      .goods-row { display: grid; grid-template-columns: minmax(0, 1fr) 130px 38px; gap: 10px; align-items: center; margin-bottom: 10px; }
+      .goods-row { display: grid; grid-template-columns: minmax(0, 1fr) 100px 120px 110px 38px; gap: 10px; align-items: center; margin-bottom: 10px; }
       .goods-row input, .goods-row select { min-width: 0; }
       .remove-good-button { width: 38px; height: 38px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--muted); font-size: 22px; line-height: 1; cursor: pointer; }
       .remove-good-button:hover { border-color: var(--orange); color: var(--orange); }
@@ -138,15 +138,16 @@
       const goodsRows = document.getElementById('goodsRows');
       const addGoodButton = document.getElementById('addGoodButton');
       const goodsOptions = [
-        'Mobile phones & tablets', 'Laptops & desktops', 'Monitors & TVs',
-        'Hard drives & storage', 'Motherboards & circuit boards',
-        'Printers & office equipment', 'Cables, chargers & accessories', 'Mixed e-waste'
+        '512GB','256GB','128GB','64GB','32GB','16GB','8GB','4GB','CHINESE','TABLET','BIGSMART','IPHONE','CPU','DISPLAY CARDS','BATTERY','HARD DISK','HARD DISK BOARD','RAMS','CAMERA','LAPTOP BOARD','LAPTOP LOW GRADE','ORIGINAL PHONES','COMPUTER 1 ICE','COMPUTER 2 ICE','GREEN BOARD HIGH GRADE','RUBBISH','RUBBISH HIGH GRADE','PRINTERS','CAR BOARD'
       ];
 
       function createGoodsRow(container, removeButtonLabel) {
         const row = document.createElement('div');
         row.className = 'goods-row';
-        row.innerHTML = `<select name="goods" required><option value="" selected disabled>Select goods from the list</option>${goodsOptions.map((good) => `<option value="${good}">${good}</option>`).join('')}</select><input name="quantity" type="number" min="1" step="1" required placeholder="Quantity" aria-label="Quantity" /><button class="remove-good-button" type="button" aria-label="${removeButtonLabel}" title="${removeButtonLabel}">×</button>`;
+        row.innerHTML = `<select name="goods" required><option value="" selected disabled>Select goods</option>${goodsOptions.map((good) => `<option value="${good}">${good}</option>`).join('')}</select><input name="quantity" type="number" min="1" step="1" required placeholder="Quantity" aria-label="Quantity" /><input name="amount" type="number" min="0" step="0.01" required placeholder="Price" aria-label="Amount per good" /><input name="total" readonly placeholder="Total" aria-label="Total amount" /><button class="remove-good-button" type="button" aria-label="${removeButtonLabel}" title="${removeButtonLabel}">×</button>`;
+        const updateTotal = () => row.querySelector('[name="total"]').value = ((Number(row.querySelector('[name="quantity"]').value) || 0) * (Number(row.querySelector('[name="amount"]').value) || 0)).toFixed(2);
+        row.querySelector('[name="quantity"]').addEventListener('input', updateTotal);
+        row.querySelector('[name="amount"]').addEventListener('input', updateTotal);
         row.querySelector('.remove-good-button').addEventListener('click', () => {
           if (container.children.length > 1) row.remove();
         });
@@ -275,7 +276,7 @@
         status.textContent = 'Sending pickup request...';
         try {
           const formData = new FormData(form);
-          const goods = [...formData.getAll('goods')].map((name, index) => ({ name, quantity: formData.getAll('quantity')[index] }));
+          const goods = [...formData.getAll('goods')].map((name, index) => ({ name, quantity: formData.getAll('quantity')[index], amount: formData.getAll('amount')[index] }));
           const payload = { requestType: 'agent', goods, preferredTime: formData.get('preferredTime'), location: formData.get('location'), notes: formData.get('notes') };
           const response = await fetch('/api/pickup-requests', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
           const result = responseData(await response.text());
