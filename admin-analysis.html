@@ -34,6 +34,7 @@
       .metric { padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: linear-gradient(145deg, #fff, #f1f8ff); }
       .metric span { display: block; color: var(--muted); font-size: 12px; font-weight: 700; }
       .metric strong { display: block; margin-top: 6px; color: var(--blue-deep); font-size: clamp(22px, 3vw, 30px); letter-spacing: -1px; }
+      .metric-period { display: block; margin-top: 5px; color: var(--muted); font-size: 11px; font-style: normal; }
       .report-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 24px 0 10px; }
       .report-head h2 { margin: 0; font-size: 22px; }
       .count { color: var(--muted); font-size: 13px; }
@@ -62,8 +63,8 @@
         <a href="admin-dashboard.html"><img src="images/company-logo.png" alt="Aihuishou Electricals" /></a>
         <nav class="nav">
           <a href="admin-dashboard.html">Overview &amp; unapproved</a>
-          <a href="admin-dashboard.html?view=approved-agents">Approved agent requests</a>
-          <a href="admin-dashboard.html?view=approved-fields">Approved field employee requests</a>
+          <a href="admin-dashboard.html?view=approved-agents">Approved agent tickets</a>
+          <a href="admin-dashboard.html?view=approved-fields">Approved field employee tickets</a>
           <a href="admin-dashboard.html?view=accounts">Manage employees and agents</a>
           <a class="active" href="admin-analysis.html">Analysis</a>
         </nav>
@@ -73,7 +74,7 @@
           <div>
             <p class="eyebrow">Operations analysis</p>
             <h1>Collection report</h1>
-            <p class="muted">Filter requests, review employees and inspect quantities and values at a glance.</p>
+            <p class="muted">Filter tickets, review employees and inspect quantities and values at a glance.</p>
           </div>
           <button class="btn" id="logout" type="button">Log out</button>
         </header>
@@ -97,7 +98,7 @@
           </div>
           <div class="filter">
             <label for="range">Date range</label>
-            <select id="range"><option value="all">All time</option><option value="today">Today</option><option value="last7">Last 7 days</option><option value="month">This month</option><option value="year">This year</option><option value="custom">Custom dates</option></select>
+            <select id="range"><option value="all">All time</option><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="yearly">Yearly</option><option value="custom">Custom dates</option></select>
           </div>
           <div class="filter custom-date" id="fromWrap" hidden>
             <label for="from">From</label>
@@ -114,10 +115,10 @@
           <article class="metric"><span>Requests</span><strong id="requestCount">0</strong></article>
           <article class="metric"><span>People represented</span><strong id="peopleCount">0</strong></article>
           <article class="metric"><span>Total quantity</span><strong id="quantityTotal">0</strong></article>
-          <article class="metric"><span>Combined amount</span><strong id="amountTotal">KSh 0.00</strong></article>
+          <article class="metric"><span>Combined amount</span><strong id="amountTotal">KSh 0.00</strong><small class="metric-period" id="amountPeriod">All time</small></article>
         </section>
 
-        <div class="report-head"><h2>Detailed requests</h2><span class="count" id="resultCount"></span></div>
+        <div class="report-head"><h2>Detailed tickets</h2><span class="count" id="resultCount"></span></div>
         <div id="results"></div>
       </section>
     </main>
@@ -132,6 +133,7 @@
 
       const formatDate = (value) => new Intl.DateTimeFormat('en-KE', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
       const formatCurrency = (value) => `KSh ${Number(value || 0).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      const formatPickupDate = (value) => { if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return value || 'Flexible'; const date = new Date(`${value}T00:00:00`); return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat('en-KE', { dateStyle: 'medium' }).format(date); };
       const requestRole = (request) => request.requestType === 'fieldEmployee' ? 'fieldEmployee' : 'agent';
       const roleLabel = (request) => requestRole(request) === 'fieldEmployee' ? 'Field employee' : 'Agent';
       const lineTotal = (good) => {
@@ -147,21 +149,30 @@
       };
       const requestQuantity = (request) => (request.goods || []).reduce((total, good) => total + (Number(good.quantity) || 0), 0);
       const personName = (request) => request.agent?.fullName || request.agentEmail || 'Unknown person';
+      const preferredDate = (request) => formatPickupDate(request.preferredDate || request.preferredTime);
+
+      function startOfWeek(value) {
+        const date = new Date(value);
+        date.setHours(0, 0, 0, 0);
+        const day = date.getDay();
+        date.setDate(date.getDate() - (day === 0 ? 6 : day - 1));
+        return date;
+      }
 
       function isInDateRange(request) {
         const date = new Date(request.createdAt);
         const now = new Date();
         const range = controls.range.value;
         if (range === 'all') return true;
-        if (range === 'today') return date.toDateString() === now.toDateString();
-        if (range === 'last7') {
-          const start = new Date(now);
-          start.setHours(0, 0, 0, 0);
-          start.setDate(start.getDate() - 6);
-          return date >= start && date <= now;
+        if (range === 'daily') return date.toDateString() === now.toDateString();
+        if (range === 'weekly') {
+          const start = startOfWeek(now);
+          const end = new Date(start);
+          end.setDate(end.getDate() + 7);
+          return date >= start && date < end;
         }
-        if (range === 'month') return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth();
-        if (range === 'year') return date.getFullYear() === now.getFullYear();
+        if (range === 'monthly') return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth();
+        if (range === 'yearly') return date.getFullYear() === now.getFullYear();
         if (controls.from.value && date < new Date(`${controls.from.value}T00:00:00`)) return false;
         if (controls.to.value && date > new Date(`${controls.to.value}T23:59:59.999`)) return false;
         return true;
@@ -175,7 +186,7 @@
           if (controls.status.value && request.status !== controls.status.value) return false;
           if (!isInDateRange(request)) return false;
           if (!query) return true;
-          const searchable = [personName(request), request.agentEmail, request.location, request.notes, ...(request.goods || []).flatMap((good) => [good.name, good.quantity, good.amount])].join(' ').toLocaleLowerCase();
+          const searchable = [personName(request), request.agentEmail, request.location, request.notes, request.totalAmount, requestTotal(request), ...(request.goods || []).flatMap((good) => [good.name, good.quantity, good.amount, good.totalAmount])].join(' ').toLocaleLowerCase();
           return searchable.includes(query);
         });
       }
@@ -185,6 +196,11 @@
         $('#peopleCount').textContent = new Set(items.map((request) => request.agentEmail)).size.toLocaleString('en-KE');
         $('#quantityTotal').textContent = items.reduce((total, request) => total + requestQuantity(request), 0).toLocaleString('en-KE');
         $('#amountTotal').textContent = formatCurrency(items.reduce((total, request) => total + requestTotal(request), 0));
+        const selectedRange = controls.range.options[controls.range.selectedIndex]?.textContent || 'All time';
+        const customLabel = controls.range.value === 'custom' && (controls.from.value || controls.to.value)
+          ? `${controls.from.value || 'Start'} → ${controls.to.value || 'Today'}`
+          : selectedRange;
+        $('#amountPeriod').textContent = `Filtered period: ${customLabel}`;
       }
 
       function addCell(row, content, className = '') {
@@ -197,18 +213,18 @@
 
       function renderTable(items) {
         const target = $('#results');
-        $('#resultCount').textContent = `${items.length.toLocaleString('en-KE')} request${items.length === 1 ? '' : 's'} shown`;
+        $('#resultCount').textContent = `${items.length.toLocaleString('en-KE')} ticket${items.length === 1 ? '' : 's'} shown`;
         if (!items.length) {
           const empty = document.createElement('div');
           empty.className = 'empty';
-          empty.textContent = 'No requests match these filters.';
+          empty.textContent = 'No tickets match these filters.';
           target.replaceChildren(empty);
           return;
         }
         const wrap = document.createElement('div');
         wrap.className = 'table-wrap';
         const table = document.createElement('table');
-        table.innerHTML = '<thead><tr><th>Date and time</th><th>Employee / agent</th><th>Goods, quantity and line amount</th><th>Total quantity</th><th>Combined amount</th><th>Status</th><th>Pickup details</th></tr></thead>';
+        table.innerHTML = '<thead><tr><th>Created</th><th>Employee / agent (once per ticket)</th><th>Goods · quantity · unit price · line total</th><th>Total quantity</th><th>Combined amount</th><th>Status</th><th>Pickup date</th><th>Pickup details</th></tr></thead>';
         const body = document.createElement('tbody');
         items.forEach((request) => {
           const row = document.createElement('tr');
@@ -223,7 +239,9 @@
           (request.goods || []).forEach((good) => {
             const line = document.createElement('div');
             line.className = 'good';
-            line.textContent = `${good.name || 'Unnamed good'} × ${Number(good.quantity) || 0} @ ${formatCurrency(good.amount)} = ${formatCurrency(lineTotal(good))}`;
+            const unitPrice = Number(good.amount);
+            const unitLabel = Number.isFinite(unitPrice) ? formatCurrency(unitPrice) : 'Not recorded';
+            line.textContent = `${good.name || 'Unnamed good'} · Qty ${Number(good.quantity) || 0} · Unit ${unitLabel} · Line ${formatCurrency(lineTotal(good))}`;
             goods.append(line);
           });
           if (!goods.children.length) goods.textContent = 'No goods recorded';
@@ -234,6 +252,7 @@
           badge.className = `badge${request.status === 'Approved' ? ' approved' : ''}`;
           badge.textContent = request.status || 'Pending approval';
           addCell(row, badge);
+          addCell(row, preferredDate(request));
           const details = document.createElement('div');
           details.textContent = request.location || 'Location not provided';
           if (request.notes) {

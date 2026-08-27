@@ -27,9 +27,19 @@ const emailTo = "aihuishoulimited@gmail.com";
 const scrypt = promisify(crypto.scrypt);
 const sessionSecret = process.env.SESSION_SECRET || (process.env.NODE_ENV === "production" ? "" : crypto.randomBytes(32).toString("hex"));
 
-const mongoClient = process.env.MONGODB_URI
-  ? new MongoClient(process.env.MONGODB_URI)
-  : null;
+let mongoClient = null;
+
+if (process.env.MONGODB_URI) {
+  try {
+    mongoClient = new MongoClient(process.env.MONGODB_URI.trim(), {
+      serverSelectionTimeoutMS: 10000,
+      connectTimeoutMS: 10000,
+      maxPoolSize: 10
+    });
+  } catch (error) {
+    console.error("Invalid MONGODB_URI configuration:", error.message);
+  }
+}
 
 const database = mongoClient?.db(process.env.MONGODB_DB || "aihuishou");
 
@@ -107,6 +117,7 @@ app.get("/health", async (req, res) => {
     await ensureDatabase();
     res.json({ status: "ok", database: "connected" });
   } catch (error) {
+    console.error("Health check database failure:", error.message);
     res.status(503).json({ status: "unavailable", database: "not connected" });
   }
 });
@@ -149,6 +160,24 @@ function calculateRequestTotal(goods) {
   }, 0);
 }
 
+function requestPreferredDate(request) {
+  if (typeof request?.preferredDate === "string") {
+    return request.preferredDate;
+  }
+
+  // Keep old records readable after the pickup-time field was renamed.
+  return typeof request?.preferredTime === "string"
+    ? request.preferredTime
+    : "";
+}
+
+function isValidDateOnly(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
+
 function readCookie(req, name) {
   const cookies = req.headers.cookie || "";
   const prefix = `${name}=`;
@@ -158,9 +187,13 @@ function readCookie(req, name) {
     .map((item) => item.trim())
     .find((item) => item.startsWith(prefix));
 
-  return value
-    ? decodeURIComponent(value.slice(prefix.length))
-    : null;
+  if (!value) return null;
+
+  try {
+    return decodeURIComponent(value.slice(prefix.length));
+  } catch {
+    return null;
+  }
 }
 
 function withoutMongoId(document) {
@@ -282,6 +315,27 @@ async function migrateJsonData() {
   });
 }
 
+async function removeDuplicateAccounts() {
+  const duplicateGroups = await accountsCollection.aggregate([
+    { $match: { email: { $type: "string" } } },
+    { $group: { _id: "$email", count: { $sum: 1 } } },
+    { $match: { count: { $gt: 1 } } }
+  ]).toArray();
+
+  for (const group of duplicateGroups) {
+    const records = await accountsCollection.find({ email: group._id })
+      .sort({ createdAt: 1, _id: 1 })
+      .toArray();
+
+    if (records.length > 1) {
+      await accountsCollection.deleteMany({
+        _id: { $in: records.slice(1).map((record) => record._id) }
+      });
+      console.warn(`Removed ${records.length - 1} duplicate account record(s) for ${group._id}.`);
+    }
+  }
+}
+
 async function ensureDatabase() {
   if (!mongoClient) {
     throw new Error("MONGODB_URI is required.");
@@ -300,6 +354,7 @@ async function ensureDatabase() {
       });
 
       await migrateJsonData();
+      await removeDuplicateAccounts();
       await Promise.all([
         accountsCollection.createIndex({ email: 1 }, { unique: true }),
         pickupRequestsCollection.createIndex({ id: 1 }, { unique: true }),
@@ -346,10 +401,12 @@ function readSignedSession(req, cookieName) {
 }
 
 function createSession(res, account) {
+  res.clearCookie("field_employee_session", { path: "/" });
   createSignedSession(res, "agent_session", { email: account.email, role: "agent" });
 }
 
 function createFieldEmployeeSession(res, account) {
+  res.clearCookie("agent_session", { path: "/" });
   createSignedSession(res, "field_employee_session", { email: account.email, role: "fieldEmployee" });
 }
 
@@ -377,12 +434,16 @@ async function getCurrentAgent(req) {
 
   if (
     !session ||
+    session.role !== "agent" ||
     session.expiresAt < Date.now()
   ) {
     return null;
   }
 
-  return getAccountByEmail(session.email);
+  const account = await getAccountByEmail(session.email);
+  // Older migrated agent records predate the role field. Anything that is
+  // not explicitly a field employee remains an agent for compatibility.
+  return account && account.role !== "fieldEmployee" ? account : null;
 }
 
 async function requireAgent(req, res, next) {
@@ -397,6 +458,7 @@ async function requireAgent(req, res, next) {
     }
 
     req.agent = account;
+    req.requestUserType = "agent";
 
     return next();
   } catch (error) {
@@ -423,7 +485,8 @@ async function getCurrentFieldEmployee(req) {
     return null;
   }
 
-  return getAccountByEmail(session.email);
+  const account = await getAccountByEmail(session.email);
+  return account?.role === "fieldEmployee" ? account : null;
 }
 
 async function requireFieldEmployee(req, res, next) {
@@ -438,6 +501,7 @@ async function requireFieldEmployee(req, res, next) {
     }
 
     req.agent = account;
+    req.requestUserType = "fieldEmployee";
 
     return next();
   } catch (error) {
@@ -455,23 +519,36 @@ async function requireFieldEmployee(req, res, next) {
 
 async function requirePickupUser(req, res, next) {
   try {
+    const requestedType = req.body?.requestType || req.query?.requestType;
+
+    if (requestedType === "fieldEmployee") {
+      return requireFieldEmployee(req, res, next);
+    }
+
+    if (requestedType === "agent") {
+      return requireAgent(req, res, next);
+    }
+
     const agent = await getCurrentAgent(req);
 
-    if (agent) {
+    const fieldEmployee = await getCurrentFieldEmployee(req);
+
+    if (agent && !fieldEmployee) {
       req.agent = agent;
       req.requestUserType = "agent";
-
       return next();
     }
 
-    const fieldEmployee =
-      await getCurrentFieldEmployee(req);
-
-    if (fieldEmployee) {
+    if (fieldEmployee && !agent) {
       req.agent = fieldEmployee;
       req.requestUserType = "fieldEmployee";
-
       return next();
+    }
+
+    if (agent && fieldEmployee) {
+      return res.status(400).json({
+        error: "Please refresh the dashboard so your active account can be identified."
+      });
     }
 
     return res.status(401).json({
@@ -1090,38 +1167,72 @@ app.post(
 
 app.post("/api/password-reset/request", authLimiter, async (req, res) => {
   const email = typeof req.body?.email === "string" ? normalizeEmail(req.body.email) : "";
-  if (!email || !/^\S+@\S+\.\S+$/.test(email)) return res.status(400).json({ error: "Please provide a valid email address." });
-  const account = await getAccountByEmail(email);
-  const isAdmin = email === adminEmail;
-  // Always return the same response so this endpoint cannot disclose registered emails.
-  if (account || isAdmin) {
-    const token = crypto.randomBytes(32).toString("hex");
-    await passwordResetCollection.deleteMany({ email });
-    await passwordResetCollection.insertOne({ email, tokenHash: crypto.createHash("sha256").update(token).digest("hex"), expiresAt: new Date(Date.now() + 60 * 60 * 1000), createdAt: new Date() });
-    const baseUrl = process.env.APP_URL || `${req.protocol}://${req.get("host")}`;
-    try {
-      await transporter.sendMail({ from: process.env.SMTP_FROM || process.env.SMTP_USER, to: email, subject: "Reset your Aihuishou password", text: `Use this link within one hour to reset your password:\n${baseUrl}/password-reset.html?token=${token}&email=${encodeURIComponent(email)}` });
-    } catch (error) { console.error("Password reset email failed:", error.message); }
+  if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
+    return res.status(400).json({ error: "Please provide a valid email address." });
   }
-  res.json({ message: "If an account exists for that email, a password-reset link has been sent." });
+
+  try {
+    const account = await getAccountByEmail(email);
+    const isAdmin = email === adminEmail;
+
+    // Always return the same response so this endpoint cannot disclose registered emails.
+    if (account || isAdmin) {
+      const token = crypto.randomBytes(32).toString("hex");
+      await passwordResetCollection.deleteMany({ email });
+      await passwordResetCollection.insertOne({
+        email,
+        tokenHash: crypto.createHash("sha256").update(token).digest("hex"),
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+        createdAt: new Date()
+      });
+      const baseUrl = process.env.APP_URL || `${req.protocol}://${req.get("host")}`;
+
+      try {
+        await transporter.sendMail({
+          from: process.env.SMTP_FROM || process.env.SMTP_USER,
+          to: email,
+          subject: "Reset your Aihuishou password",
+          text: `Use this link within one hour to reset your password:\n${baseUrl}/password-reset.html?token=${token}&email=${encodeURIComponent(email)}`
+        });
+      } catch (error) {
+        console.error("Password reset email failed:", error.message);
+      }
+    }
+
+    return res.json({ message: "If an account exists for that email, a password-reset link has been sent." });
+  } catch (error) {
+    console.error("Password reset request failed:", error.message);
+    return res.status(500).json({ error: "Unable to process the password reset request." });
+  }
 });
 
 app.post("/api/password-reset/confirm", authLimiter, async (req, res) => {
   const { email, token, password } = req.body || {};
   const normalizedEmail = typeof email === "string" ? normalizeEmail(email) : "";
-  if (!normalizedEmail || typeof token !== "string" || typeof password !== "string" || password.length < 8) return res.status(400).json({ error: "Enter a valid reset link and a password of at least 8 characters." });
-  const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
-  const reset = await passwordResetCollection.findOne({ email: normalizedEmail, tokenHash, expiresAt: { $gt: new Date() } });
-  if (!reset) return res.status(400).json({ error: "This reset link is invalid or has expired." });
-  const salt = crypto.randomBytes(16).toString("hex");
-  const passwordHash = (await scrypt(password, salt, 64)).toString("hex");
-  if (normalizedEmail === adminEmail) await adminAccountsCollection.updateOne({ email: normalizedEmail }, { $set: { email: normalizedEmail, salt, passwordHash, updatedAt: new Date() } }, { upsert: true });
-  else {
-    const result = await accountsCollection.updateOne({ email: normalizedEmail }, { $set: { salt, passwordHash, updatedAt: new Date().toISOString() } });
-    if (!result.matchedCount) return res.status(400).json({ error: "This account no longer exists." });
+  if (!normalizedEmail || typeof token !== "string" || typeof password !== "string" || password.length < 8) {
+    return res.status(400).json({ error: "Enter a valid reset link and a password of at least 8 characters." });
   }
-  await passwordResetCollection.deleteMany({ email: normalizedEmail });
-  res.json({ message: "Password updated. You can now sign in." });
+
+  try {
+    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+    const reset = await passwordResetCollection.findOne({ email: normalizedEmail, tokenHash, expiresAt: { $gt: new Date() } });
+    if (!reset) return res.status(400).json({ error: "This reset link is invalid or has expired." });
+
+    const salt = crypto.randomBytes(16).toString("hex");
+    const passwordHash = (await scrypt(password, salt, 64)).toString("hex");
+    if (normalizedEmail === adminEmail) {
+      await adminAccountsCollection.updateOne({ email: normalizedEmail }, { $set: { email: normalizedEmail, salt, passwordHash, updatedAt: new Date() } }, { upsert: true });
+    } else {
+      const result = await accountsCollection.updateOne({ email: normalizedEmail }, { $set: { salt, passwordHash, updatedAt: new Date().toISOString() } });
+      if (!result.matchedCount) return res.status(400).json({ error: "This account no longer exists." });
+    }
+
+    await passwordResetCollection.deleteMany({ email: normalizedEmail });
+    return res.json({ message: "Password updated. You can now sign in." });
+  } catch (error) {
+    console.error("Password reset confirmation failed:", error.message);
+    return res.status(500).json({ error: "Unable to update the password right now." });
+  }
 });
 
 app.post(
@@ -1223,7 +1334,9 @@ app.get(
           .filter(
             (request) =>
               request.agentEmail ===
-              req.agent.email
+              req.agent.email &&
+              (request.requestType || "agent") ===
+              req.requestUserType
           )
           .sort(
             (first, second) =>
@@ -1300,6 +1413,7 @@ app.get(
             return {
               ...request,
               totalAmount: calculateRequestTotal(request.goods),
+              preferredDate: requestPreferredDate(request),
               agent: agent
                 ? {
                     fullName:
@@ -1374,16 +1488,18 @@ app.post(
   requirePickupUser,
   async (req, res) => {
     const {
-      requestType = "agent",
+      requestType,
       goods,
+      preferredDate,
       preferredTime,
       location,
       notes
     } = req.body || {};
 
-    const isFieldEmployee =
-      requestType ===
-      "fieldEmployee";
+    const submittedRequestType = typeof requestType === "string" && requestType.trim()
+      ? requestType.trim()
+      : (req.requestUserType || "agent");
+    const isFieldEmployee = submittedRequestType === "fieldEmployee";
 
     const validGoods =
       Array.isArray(goods) &&
@@ -1411,32 +1527,36 @@ app.post(
           Number(item.amount) >= 0
       );
 
-    const fields =
-      isFieldEmployee
-        ? []
-        : [
-            preferredTime,
-            location
-          ];
+    const fields = isFieldEmployee ? [] : [location];
 
-    if (
-      requestType !==
-        req.requestUserType ||
-      !validGoods ||
-      fields.some(
-        (value) =>
-          typeof value !==
-            "string" ||
-          !value.trim()
-      )
-    ) {
+    const missingFields = fields.some(
+      (value) => typeof value !== "string" || !value.trim()
+    );
+
+    if (submittedRequestType !== req.requestUserType) {
       return res.status(400).json({
-        error:
-          "Please add at least one good with a valid quantity and complete the request details."
+        error: "This dashboard session cannot submit that request type. Refresh and sign in again."
       });
     }
 
-    const cleanPreferredTime = typeof preferredTime === "string" ? preferredTime.trim() : "";
+    if (!validGoods) {
+      return res.status(400).json({
+        error: "Add at least one good with a category, whole-number quantity, and valid amount per item."
+      });
+    }
+
+    if (missingFields) {
+      return res.status(400).json({
+        error: "Complete the pickup location."
+      });
+    }
+
+    // `preferredTime` is accepted but ignored for one release so older cached
+    // dashboards can still create tickets while clients migrate to dates.
+    const cleanPreferredDate = typeof preferredDate === "string" ? preferredDate.trim() : "";
+    if (cleanPreferredDate && !isValidDateOnly(cleanPreferredDate)) {
+      return res.status(400).json({ error: "Choose a valid pickup date." });
+    }
     const cleanedGoods =
       goods.map((item) => ({
         name: item.name.trim(),
@@ -1455,12 +1575,12 @@ app.post(
         .join(", ");
 
     const pickupRequest = [
-      "New agent pickup request",
+      `New ${isFieldEmployee ? "field employee" : "agent"} ticket`,
       "",
-      `Agent: ${req.agent.fullName}`,
+      `${isFieldEmployee ? "Field employee" : "Agent"}: ${req.agent.fullName}`,
       `Phone: ${req.agent.phone}`,
       `Goods: ${goodsText}`,
-      `Preferred pickup time: ${cleanPreferredTime || "Not provided"}`,
+      `Preferred pickup date: ${cleanPreferredDate || "Not provided"}`,
       `Pickup location: ${
         isFieldEmployee
           ? "Not provided (field employee)"
@@ -1478,10 +1598,10 @@ app.post(
       id: crypto.randomUUID(),
       agentEmail:
         req.agent.email,
-      requestType,
+      requestType: submittedRequestType,
       goods: cleanedGoods,
       totalAmount: calculateRequestTotal(cleanedGoods),
-      preferredTime: cleanPreferredTime,
+      preferredDate: cleanPreferredDate,
       location:
         isFieldEmployee
           ? ""
@@ -1506,7 +1626,7 @@ app.post(
 
       return res.status(500).json({
         error:
-          "We could not save your pickup request. Please try again later."
+          "We could not save your ticket. Please try again later."
       });
     }
 
@@ -1522,8 +1642,8 @@ app.post(
           req.agent.email,
         subject: `${
           isFieldEmployee
-            ? "Field report"
-            : "Pickup request"
+            ? "Field ticket"
+            : "Pickup ticket"
         }: ${cleanedGoods
           .map(
             (item) => item.name
@@ -1549,7 +1669,7 @@ app.post(
 
     return res.status(201).json({
       message:
-        "Pickup request received.",
+        "Ticket created and sent for admin approval.",
       emailSent,
       request:
         responseRequest

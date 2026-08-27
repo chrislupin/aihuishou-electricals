@@ -3,301 +3,141 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#082a62" />
     <title>Agent dashboard | Aihuishou Electricals</title>
     <link rel="stylesheet" href="styles.css" />
     <style>
       * { box-sizing: border-box; }
-      body { margin: 0; min-height: 100vh; font-family: 'Space Grotesk', system-ui, sans-serif; }
+      body { margin: 0; min-height: 100vh; font-family: system-ui, -apple-system, Segoe UI, sans-serif; }
       a { color: inherit; text-decoration: none; }
-      .shell { width: min(1060px, calc(100% - 36px)); margin: 0 auto; }
-      header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 22px 0; }
-      .brand { display: flex; align-items: center; }
-      .portal-logo { width: 154px; height: 58px; object-fit: contain; object-position: left center; }
-      .header-actions { display: flex; gap: 10px; align-items: center; }
-      .btn { display: inline-flex; align-items: center; justify-content: center; padding: 11px 16px; border: 1px solid transparent; border-radius: 8px; background: var(--orange); color: #fff; font: 700 14px inherit; cursor: pointer; }
-      .btn-ghost { background: rgba(255,255,255,.65); color: var(--blue-deep); border-color: var(--line); }
-      .dashboard { padding: 26px 0 62px; }
-      .eyebrow { color: var(--orange); font: 500 11px 'DM Mono', monospace; letter-spacing: 1.4px; text-transform: uppercase; }
-      .dashboard-title { display: flex; justify-content: space-between; align-items: end; gap: 16px; margin-bottom: 22px; }
-      h1 { margin: 8px 0 0; color: var(--blue-deep); font-size: clamp(30px, 5vw, 45px); letter-spacing: -2px; }
-      .agent-pill { padding: 9px 12px; border: 1px solid var(--line); border-radius: 999px; background: #fff; color: var(--muted); font: 500 12px 'DM Mono', monospace; white-space: nowrap; }
-      .agent-pill span { color: var(--blue-deep); }
-      .dashboard-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(260px, .65fr); gap: 22px; align-items: start; }
-      .form-card, .guide-card { border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 14px 34px rgba(20,83,136,.09); }
-      .form-card { padding: clamp(22px, 4vw, 34px); background: rgba(255,255,255,.88); }
-      h2 { margin: 0 0 5px; color: var(--blue-deep); font-size: 25px; letter-spacing: -1px; }
+      .shell { width: min(1120px, calc(100% - 32px)); margin: 0 auto; }
+      .topbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 18px 0; }
+      .brand img { width: 148px; height: 54px; object-fit: contain; object-position: left center; }
+      .top-actions { display: flex; gap: 8px; align-items: center; }
+      .btn { min-height: 42px; display: inline-flex; align-items: center; justify-content: center; padding: 10px 15px; border: 1px solid transparent; border-radius: 10px; background: var(--orange); color: #fff; font: 750 14px inherit; cursor: pointer; transition: transform .15s ease, opacity .15s ease; }
+      .btn:hover { transform: translateY(-1px); }
+      .btn:disabled { cursor: wait; opacity: .6; transform: none; }
+      .btn-ghost { border-color: var(--line); background: rgba(255,255,255,.78); color: var(--blue-deep); }
+      .dashboard { padding: 18px 0 56px; }
+      .hero { display: flex; align-items: end; justify-content: space-between; gap: 18px; margin-bottom: 22px; }
+      .eyebrow { margin: 0 0 6px; color: var(--orange); font-size: 12px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+      h1 { margin: 0; color: var(--blue-deep); font-size: clamp(32px, 6vw, 54px); letter-spacing: -2px; line-height: 1; }
+      h2 { margin: 0 0 6px; color: var(--blue-deep); font-size: 23px; letter-spacing: -.7px; }
       .muted { margin: 0; color: var(--muted); font-size: 14px; }
-      label { display: block; margin: 17px 0 6px; color: var(--blue-deep); font-size: 13px; font-weight: 700; }
-      input, select, textarea { width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: #f8fcff; color: var(--ink); font: inherit; }
-      input:focus, select:focus, textarea:focus { outline: 0; border-color: var(--orange); box-shadow: 0 0 0 3px rgba(35,103,255,.12); }
-      .goods-fieldset { margin: 17px 0 0; padding: 0; border: 0; }
-      .goods-fieldset legend { margin-bottom: 6px; color: var(--blue-deep); font-size: 13px; font-weight: 700; }
-      .goods-row { display: grid; grid-template-columns: minmax(0, 1fr) 100px 120px 110px 38px; gap: 10px; align-items: center; margin-bottom: 10px; }
-      .goods-row input, .goods-row select { min-width: 0; }
-      .remove-good-button { width: 38px; height: 38px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--muted); font-size: 22px; line-height: 1; cursor: pointer; }
-      .remove-good-button:hover { border-color: var(--orange); color: var(--orange); }
-      .add-good-button { margin-top: 2px; }
-      .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-      .form-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 22px; }
-      .location-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 9px; }
-      .location-note { color: var(--muted); font-size: 12px; }
-      .map-preview { display: none; margin-top: 14px; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
-      .map-preview.is-visible { display: block; }
-      .map-preview iframe { display: block; width: 100%; height: 210px; border: 0; }
-      .map-link { display: inline-flex; padding: 10px 12px; color: var(--orange); font-size: 13px; font-weight: 700; }
+      .identity { padding: 10px 13px; border: 1px solid var(--line); border-radius: 999px; background: #fff; color: var(--muted); font-size: 12px; white-space: nowrap; }
+      .identity strong { color: var(--blue-deep); }
+      .layout { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(250px, .6fr); gap: 20px; align-items: start; }
+      .card { border: 1px solid var(--line); border-radius: 16px; background: rgba(255,255,255,.9); box-shadow: 0 14px 34px rgba(20,83,136,.09); }
+      .form-card { padding: clamp(20px, 4vw, 34px); }
+      label, legend { display: block; margin: 18px 0 7px; color: var(--blue-deep); font-size: 13px; font-weight: 800; }
+      input, select, textarea { width: 100%; min-height: 44px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px; background: #f8fcff; color: var(--ink); font: inherit; }
+      textarea { min-height: 92px; resize: vertical; }
+      input:focus, select:focus, textarea:focus { outline: 0; border-color: var(--orange); box-shadow: 0 0 0 3px rgba(35,103,255,.14); }
+      .goods-fieldset { margin: 22px 0 0; padding: 0; border: 0; }
+      .goods-fieldset legend { margin-top: 0; }
+      .goods-row { display: grid; grid-template-columns: minmax(0, 1fr) 92px 118px 112px 42px; gap: 8px; align-items: center; margin-bottom: 10px; }
+      .goods-row input[readonly] { background: #eef7ff; color: var(--blue-deep); font-weight: 750; }
+      .remove-good { width: 42px; height: 42px; border: 1px solid var(--line); border-radius: 10px; background: transparent; color: var(--muted); font-size: 22px; cursor: pointer; }
+      .remove-good:hover { border-color: #b42318; color: #b42318; }
+      .add-good { margin-top: 2px; }
+      .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+      .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 22px; }
       .status { min-height: 22px; margin: 14px 0 0; color: var(--muted); font-size: 13px; }
       .status.error { color: #b42318; }
-      .guide-card { padding: 26px; background: linear-gradient(145deg, var(--blue-deep), #0e5fb5); color: #fff; }
-      .guide-icon { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 10px; background: var(--lime); color: var(--blue-deep); font-size: 22px; font-weight: 700; }
-      .guide-card h2 { margin: 18px 0 8px; color: #fff; }
-      .guide-card p { margin: 0; color: rgba(255,255,255,.78); font-size: 14px; }
-      .guide-list { display: grid; gap: 14px; margin-top: 24px; }
-      .guide-list div { display: flex; gap: 10px; align-items: center; font-size: 13px; }
-      .guide-list strong { display: grid; place-items: center; flex: 0 0 25px; width: 25px; height: 25px; border: 1px solid rgba(255,255,255,.35); border-radius: 50%; color: var(--lime); font: 500 11px 'DM Mono', monospace; }
-      .history-section { margin-top: 28px; }
-      .history-heading { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 13px; }
-      .history-heading h2 { margin: 0 0 4px; }
+      .helper-card { padding: 24px; background: linear-gradient(145deg, var(--blue-deep), #0e5fb5); color: #fff; }
+      .helper-card h2 { color: #fff; }
+      .helper-card p { color: rgba(255,255,255,.78); }
+      .helper-list { display: grid; gap: 14px; margin-top: 24px; }
+      .helper-list div { display: flex; gap: 10px; align-items: flex-start; color: rgba(255,255,255,.86); font-size: 13px; }
+      .helper-list b { display: grid; flex: 0 0 25px; place-items: center; width: 25px; height: 25px; border: 1px solid rgba(255,255,255,.35); border-radius: 50%; color: var(--lime); font-size: 11px; }
+      .history { margin-top: 28px; }
+      .history-head { display: flex; justify-content: space-between; gap: 12px; align-items: end; margin-bottom: 12px; }
       .history-list { display: grid; gap: 10px; }
-      .history-item, .history-empty { border: 1px solid var(--line); border-radius: 12px; padding: 16px; background: rgba(255,255,255,.82); }
-      .history-item-head { display: flex; align-items: start; justify-content: space-between; gap: 12px; }
+      .history-item, .empty { padding: 16px; border: 1px solid var(--line); border-radius: 13px; background: rgba(255,255,255,.86); }
+      .history-item-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
       .history-item h3 { margin: 0; color: var(--blue-deep); font-size: 16px; }
-      .history-item p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
-      .history-status { padding: 5px 8px; border-radius: 999px; background: rgba(111,231,255,.35); color: var(--blue-deep); font: 500 10px 'DM Mono', monospace; white-space: nowrap; }
-      .history-meta { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 12px; color: var(--muted); font-size: 12px; }
-      @media (max-width: 760px) { .dashboard-grid { grid-template-columns: 1fr; } .dashboard-title { align-items: flex-start; flex-direction: column; } .form-grid { grid-template-columns: 1fr; gap: 0; } }
+      .history-item p { margin: 5px 0 0; color: var(--muted); font-size: 13px; }
+      .history-status { padding: 5px 8px; border-radius: 999px; background: #e5f2ff; color: var(--blue-deep); font-size: 11px; font-weight: 800; white-space: nowrap; }
+      .history-meta { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 12px; color: var(--muted); font-size: 12px; }
+      .history-total { color: var(--blue-deep); font-weight: 800; }
+      .location-actions { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-top: 9px; }
+      .location-note { color: var(--muted); font-size: 12px; }
+      .map-preview { display: none; margin-top: 12px; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; }
+      .map-preview.is-visible { display: block; }
+      .map-preview iframe { display: block; width: 100%; height: 190px; border: 0; }
+      .map-link { display: block; padding: 9px 11px; color: var(--orange); font-size: 12px; font-weight: 800; }
+      @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } .helper-card { order: -1; } }
+      @media (max-width: 650px) { .shell { width: min(100% - 24px, 1120px); } .topbar { align-items: flex-start; } .top-actions { flex-wrap: wrap; justify-content: end; } .top-actions .btn { min-height: 38px; padding: 8px 11px; font-size: 12px; } .hero { align-items: flex-start; flex-direction: column; } .identity { max-width: 100%; overflow: hidden; text-overflow: ellipsis; } .field-grid { grid-template-columns: 1fr; gap: 0; } .goods-row { grid-template-columns: 1fr 1fr; gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 11px; background: #fbfdff; } .goods-row select { grid-column: 1 / -1; } .goods-row input[readonly] { grid-column: 1 / 2; } .remove-good { grid-column: 2; justify-self: end; } .actions .btn { flex: 1 1 150px; } .history-item-head { flex-direction: column; } }
     </style>
   </head>
   <body>
     <div class="shell">
-      <header>
-        <a class="brand" href="index.html"><img class="portal-logo" src="images/company-logo.png" alt="Aihuishou Electricals" /></a>
-        <div class="header-actions"><a class="btn btn-ghost" href="index.html">Back</a><button class="btn btn-ghost" id="logoutButton" type="button">Log out</button></div>
+      <header class="topbar">
+        <a class="brand" href="index.html"><img src="images/company-logo.png" alt="Aihuishou Electricals" /></a>
+        <div class="top-actions"><a class="btn btn-ghost" href="index.html">Home</a><button class="btn btn-ghost" id="logoutButton" type="button">Log out</button></div>
       </header>
-
       <main class="dashboard">
-        <div class="dashboard-title">
-          <div><div class="eyebrow">Pickup coordination</div><h1>Welcome, <span id="agentName">Agent</span></h1></div>
-        </div>
-        <div class="dashboard-grid">
-          <section class="form-card" aria-label="Pickup request form">
-            <h2>Goods ready for collection</h2>
-            <p class="muted">Select the goods and share the collection details with the operations team.</p>
-            <form id="pickupRequestForm">
-              <fieldset class="goods-fieldset">
-                <legend>Goods ready for pickup</legend>
-                <div id="goodsRows"></div>
-                <button class="btn btn-ghost add-good-button" id="addGoodButton" type="button">+ Add another good</button>
-              </fieldset>
-              <label for="pickupTime">Preferred pickup time</label>
-              <select id="pickupTime" name="preferredTime" required><option value="" selected disabled>Select a time</option><option value="Morning (8am–12pm)">Morning (8am–12pm)</option><option value="Afternoon (12pm–5pm)">Afternoon (12pm–5pm)</option><option value="Flexible">Flexible</option></select>
-              <label for="pickupLocation">Pickup location</label><input id="pickupLocation" name="location" required placeholder="Area, building or landmark" />
-              <div class="location-actions">
-                <button class="btn btn-ghost" id="useLocationButton" type="button">Use device location</button>
-                <span class="location-note">You will be asked to allow location access.</span>
-              </div>
+        <section class="hero"><div><p class="eyebrow">Agent portal</p><h1>Plan the next pickup.</h1><p class="muted">Add goods, pricing and a clear collection point for operations.</p></div><div class="identity">Signed in as <strong id="agentName">Agent</strong></div></section>
+        <div class="layout">
+          <section class="card form-card">
+            <h2>Create ticket</h2><p class="muted">Every line needs a good, whole-number quantity and amount per item. A pickup date is optional.</p>
+            <form id="pickupRequestForm" novalidate>
+              <fieldset class="goods-fieldset"><legend>Goods ready for pickup</legend><div id="goodsRows"></div><button class="btn btn-ghost add-good" id="addGoodButton" type="button">+ Add another good</button></fieldset>
+              <div class="field-grid"><div><label for="pickupLocation">Pickup location</label><input id="pickupLocation" name="location" required placeholder="Area, building or landmark" /></div></div>
+              <div class="location-actions"><button class="btn btn-ghost" id="useLocationButton" type="button">Use device location</button><span class="location-note">Optional precise location</span></div>
               <p class="status" id="locationStatus" role="status" aria-live="polite"></p>
-              <div class="map-preview" id="mapPreview">
-                <iframe id="locationMap" title="Selected pickup location" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
-                <a class="map-link" id="openMapsLink" href="#" target="_blank" rel="noopener">Open precise location in Google Maps ↗</a>
-              </div>
-              <label for="pickupNotes">Collection notes <span class="muted">(optional)</span></label><textarea id="pickupNotes" name="notes" rows="3" placeholder="Access details, condition of goods, or anything the driver should know"></textarea>
-              <div class="form-actions"><button class="btn" type="submit">Request pickup</button><button class="btn btn-ghost" type="reset">Clear form</button></div>
+              <div class="map-preview" id="mapPreview"><iframe id="locationMap" title="Selected pickup location" loading="lazy"></iframe><a class="map-link" id="openMapsLink" href="#" target="_blank" rel="noopener">Open location in Google Maps ↗</a></div>
+              <label for="pickupNotes">Collection notes <span class="muted">(optional)</span></label><textarea id="pickupNotes" name="notes" placeholder="Access details or anything the driver should know"></textarea>
+              <div class="actions"><button class="btn" type="submit">Create ticket</button><button class="btn btn-ghost" type="reset">Clear form</button></div>
+              <label for="pickupDate">Desired pickup date <span class="muted">(optional)</span></label><input id="pickupDate" name="preferredDate" type="date" /><p class="muted date-note">Leave this blank when the date is flexible.</p>
               <p class="status" id="pickupStatus" role="status" aria-live="polite"></p>
             </form>
           </section>
-          <aside class="guide-card"><div class="guide-icon">↗</div><h2>Before you request</h2><p>Group similar items together where possible. The operations team will confirm the pickup window by phone.</p><div class="guide-list"><div><strong>1</strong><span>Choose the closest goods category.</span></div><div><strong>2</strong><span>Share quantity, location and timing.</span></div><div><strong>3</strong><span>Wait for pickup confirmation.</span></div></div></aside>
+          <aside class="card helper-card"><h2>Quick checklist</h2><p>Accurate pricing helps the operations team review every ticket quickly.</p><div class="helper-list"><div><b>1</b><span>Choose one category per row.</span></div><div><b>2</b><span>Use whole-number quantities and the amount per item.</span></div><div><b>3</b><span>Share a landmark and an optional pickup date.</span></div></div></aside>
         </div>
-        <section class="history-section" aria-labelledby="historyTitle">
-          <div class="history-heading"><div><h2 id="historyTitle">Pickup history</h2><p class="muted">Your past pickup requests, newest first.</p></div></div>
-          <div class="history-list" id="historyList" aria-live="polite"><div class="history-empty">Loading pickup history...</div></div>
-        </section>
+        <section class="history" aria-labelledby="historyTitle"><div class="history-head"><div><h2 id="historyTitle">Your ticket history</h2><p class="muted">Newest tickets appear first.</p></div></div><div class="history-list" id="historyList" aria-live="polite"><div class="empty">Loading history…</div></div></section>
       </main>
     </div>
     <script>
-      async function loadAgent() {
-        const response = await fetch('/api/agent-session');
-        if (!response.ok) return window.location.replace('agent-login.html');
-        const responseText = await response.text();
-        if (!responseText) return window.location.replace('agent-login.html');
-        const { agent } = JSON.parse(responseText);
-        if (!agent) return window.location.replace('agent-login.html');
-        document.getElementById('agentName').textContent = agent.fullName;
-        loadPickupHistory();
-      }
-      loadAgent();
-      document.getElementById('logoutButton').addEventListener('click', async () => { await fetch('/api/agent-logout', { method: 'POST' }); window.location.assign('agent-login.html'); });
       const form = document.getElementById('pickupRequestForm');
-      const status = document.getElementById('pickupStatus');
+      const goodsRows = document.getElementById('goodsRows');
+      const goodsOptions = ['512GB','256GB','128GB','64GB','32GB','16GB','8GB','4GB','CHINESE','TABLET','BIGSMART','IPHONE','CPU','DISPLAY CARDS','BATTERY','HARD DISK','HARD DISK BOARD','RAMS','CAMERA','LAPTOP BOARD','LAPTOP LOW GRADE','ORIGINAL PHONES','COMPUTER 1 ICE','COMPUTER 2 ICE','GREEN BOARD HIGH GRADE','RUBBISH','RUBBISH HIGH GRADE','PRINTERS','CAR BOARD'];
+      const pickupStatus = document.getElementById('pickupStatus');
+      const pickupDateInput = document.getElementById('pickupDate');
+      const historyList = document.getElementById('historyList');
       const locationInput = document.getElementById('pickupLocation');
-      const useLocationButton = document.getElementById('useLocationButton');
       const locationStatus = document.getElementById('locationStatus');
       const mapPreview = document.getElementById('mapPreview');
       const locationMap = document.getElementById('locationMap');
       const openMapsLink = document.getElementById('openMapsLink');
-      const historyList = document.getElementById('historyList');
-      const goodsRows = document.getElementById('goodsRows');
-      const addGoodButton = document.getElementById('addGoodButton');
-      const goodsOptions = [
-        '512GB','256GB','128GB','64GB','32GB','16GB','8GB','4GB','CHINESE','TABLET','BIGSMART','IPHONE','CPU','DISPLAY CARDS','BATTERY','HARD DISK','HARD DISK BOARD','RAMS','CAMERA','LAPTOP BOARD','LAPTOP LOW GRADE','ORIGINAL PHONES','COMPUTER 1 ICE','COMPUTER 2 ICE','GREEN BOARD HIGH GRADE','RUBBISH','RUBBISH HIGH GRADE','PRINTERS','CAR BOARD'
-      ];
+      const formatMoney = (value) => `KSh ${Number(value || 0).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      const formatDate = (value) => new Intl.DateTimeFormat('en-KE', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
+      const formatPickupDate = (value) => { if (!value) return 'Flexible'; const date = new Date(`${value}T00:00:00`); return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(date.getTime()) ? new Intl.DateTimeFormat('en-KE', { dateStyle: 'medium' }).format(date) : value; };
 
-      function createGoodsRow(container, removeButtonLabel) {
-        const row = document.createElement('div');
-        row.className = 'goods-row';
-        row.innerHTML = `<select name="goods" required><option value="" selected disabled>Select goods</option>${goodsOptions.map((good) => `<option value="${good}">${good}</option>`).join('')}</select><input name="quantity" type="number" min="1" step="1" required placeholder="Quantity" aria-label="Quantity" /><input name="amount" type="number" min="0" step="0.01" required placeholder="Price" aria-label="Amount per good" /><input name="total" readonly placeholder="Total" aria-label="Total amount" /><button class="remove-good-button" type="button" aria-label="${removeButtonLabel}" title="${removeButtonLabel}">×</button>`;
-        const updateTotal = () => row.querySelector('[name="total"]').value = ((Number(row.querySelector('[name="quantity"]').value) || 0) * (Number(row.querySelector('[name="amount"]').value) || 0)).toFixed(2);
-        row.querySelector('[name="quantity"]').addEventListener('input', updateTotal);
-        row.querySelector('[name="amount"]').addEventListener('input', updateTotal);
-        row.querySelector('.remove-good-button').addEventListener('click', () => {
-          if (container.children.length > 1) row.remove();
-        });
-        container.append(row);
+      function addGoodsRow() {
+        const row = document.createElement('div'); row.className = 'goods-row';
+        const select = document.createElement('select'); select.name = 'goods'; select.required = true; select.innerHTML = '<option value="" selected disabled>Select goods</option>'; goodsOptions.forEach((good) => select.add(new Option(good, good)));
+        const quantity = Object.assign(document.createElement('input'), { name: 'quantity', type: 'number', min: '1', step: '1', required: true, placeholder: 'Qty', inputMode: 'numeric', ariaLabel: 'Quantity' });
+        const amount = Object.assign(document.createElement('input'), { name: 'amount', type: 'number', min: '0', step: '0.01', required: true, placeholder: 'Amount', inputMode: 'decimal', ariaLabel: 'Amount per good' });
+        const total = Object.assign(document.createElement('input'), { name: 'total', type: 'text', readOnly: true, placeholder: 'Line total', ariaLabel: 'Line total' });
+        const remove = Object.assign(document.createElement('button'), { type: 'button', className: 'remove-good', textContent: '×', ariaLabel: 'Remove this good', title: 'Remove this good' });
+        const update = () => { const q = Number(quantity.value); const a = Number(amount.value); total.value = Number.isFinite(q) && Number.isFinite(a) ? (a * q).toFixed(2) : ''; };
+        quantity.addEventListener('input', update); amount.addEventListener('input', update); remove.addEventListener('click', () => { if (goodsRows.children.length > 1) row.remove(); });
+        row.append(select, quantity, amount, total, remove); goodsRows.append(row);
       }
-
-      function addGoodRow() {
-        createGoodsRow(goodsRows, 'Remove this good');
-      }
-
-      addGoodRow();
-      addGoodButton.addEventListener('click', addGoodRow);
-      function responseData(responseText) {
-        if (!responseText) throw new Error('The server did not return a response. Please refresh and try again.');
-        try { return JSON.parse(responseText); }
-        catch { throw new Error('The server returned an invalid response. Please refresh and try again.'); }
-      }
-
-      function formatRequestDate(dateString) {
-        return new Intl.DateTimeFormat('en-KE', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(dateString));
-      }
-
-      function addHistoryItem(request) {
-        const item = document.createElement('article');
-        item.className = 'history-item';
-        const head = document.createElement('div');
-        head.className = 'history-item-head';
-        const details = document.createElement('div');
-        const title = document.createElement('h3');
-        title.textContent = Array.isArray(request.goods)
-          ? request.goods.map((item) => `${item.name} (${item.quantity})`).join(', ')
-          : request.goods;
-        const location = document.createElement('p');
-        location.textContent = request.location || 'Field employee report';
-        details.append(title, location);
-        const requestStatus = document.createElement('span');
-        requestStatus.className = 'history-status';
-        requestStatus.textContent = request.status;
-        head.append(details, requestStatus);
-        const meta = document.createElement('div');
-        meta.className = 'history-meta';
-        const quantity = Array.isArray(request.goods) ? '' : request.quantity;
-        [quantity, request.preferredTime, formatRequestDate(request.createdAt)].filter(Boolean).forEach((value) => {
-          const detail = document.createElement('span');
-          detail.textContent = value;
-          meta.append(detail);
-        });
-        item.append(head, meta);
-        historyList.append(item);
-      }
-
-      async function loadPickupHistory() {
-        try {
-          const response = await fetch('/api/pickup-requests');
-          const result = responseData(await response.text());
-          if (!response.ok) {
-            if (response.status === 404) throw new Error('Pickup history will be available after the website server is restarted.');
-            throw new Error(result.error || 'Unable to load pickup history.');
-          }
-          historyList.replaceChildren();
-          if (!result.requests.length) {
-            const empty = document.createElement('div');
-            empty.className = 'history-empty';
-            empty.textContent = 'No pickup requests yet. Your submitted requests will appear here.';
-            historyList.append(empty);
-            return;
-          }
-          result.requests.forEach(addHistoryItem);
-        } catch (error) {
-          historyList.replaceChildren();
-          const empty = document.createElement('div');
-          empty.className = 'history-empty';
-          empty.textContent = error.message || 'Unable to load pickup history.';
-          historyList.append(empty);
-        }
-      }
-
-      function showDeviceLocation(position) {
-        const { latitude, longitude, accuracy } = position.coords;
-        const latitudeText = latitude.toFixed(6);
-        const longitudeText = longitude.toFixed(6);
-        const mapsUrl = `https://www.google.com/maps?q=${latitudeText},${longitudeText}`;
-        locationInput.value = `GPS: ${latitudeText}, ${longitudeText} (accuracy: ±${Math.round(accuracy)} m)`;
-        locationMap.src = `${mapsUrl}&z=17&output=embed`;
-        openMapsLink.href = mapsUrl;
-        mapPreview.classList.add('is-visible');
-        locationStatus.className = 'status';
-        locationStatus.textContent = `Precise device location captured (within approximately ${Math.round(accuracy)} metres).`;
-        useLocationButton.disabled = false;
-        useLocationButton.textContent = 'Update device location';
-      }
-
-      function showLocationError(error) {
-        const messages = {
-          1: 'Location access was declined. Enter the pickup location manually or allow access and try again.',
-          2: 'Your device location could not be determined. Check that location services are enabled and try again.',
-          3: 'Location request timed out. Please try again or enter the pickup location manually.'
-        };
-        locationStatus.className = 'status error';
-        locationStatus.textContent = messages[error.code] || 'Unable to access your device location. Please enter it manually.';
-        useLocationButton.disabled = false;
-        useLocationButton.textContent = 'Use device location';
-      }
-
-      useLocationButton.addEventListener('click', () => {
-        if (!navigator.geolocation) {
-          locationStatus.className = 'status error';
-          locationStatus.textContent = 'This browser does not support device location. Please enter the pickup location manually.';
-          return;
-        }
-        useLocationButton.disabled = true;
-        useLocationButton.textContent = 'Finding location...';
-        locationStatus.className = 'status';
-        locationStatus.textContent = 'Requesting your device location...';
-        navigator.geolocation.getCurrentPosition(showDeviceLocation, showLocationError, {
-          enableHighAccuracy: true,
-          timeout: 15000,
-          maximumAge: 0
-        });
-      });
-      form.addEventListener('submit', async (event) => {
-        event.preventDefault();
-        const button = form.querySelector('button[type="submit"]');
-        button.disabled = true;
-        status.className = 'status';
-        status.textContent = 'Sending pickup request...';
-        try {
-          const formData = new FormData(form);
-          const goods = [...formData.getAll('goods')].map((name, index) => ({ name, quantity: formData.getAll('quantity')[index], amount: formData.getAll('amount')[index] }));
-          const payload = { requestType: 'agent', goods, preferredTime: formData.get('preferredTime'), location: formData.get('location'), notes: formData.get('notes') };
-          const response = await fetch('/api/pickup-requests', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-          const result = responseData(await response.text());
-          if (!response.ok) throw new Error(result.error || 'Unable to send pickup request.');
-          status.textContent = 'Pickup request submitted and waiting for admin approval.';
-          form.reset();
-          mapPreview.classList.remove('is-visible');
-          locationStatus.textContent = '';
-          useLocationButton.textContent = 'Use device location';
-          loadPickupHistory();
-        } catch (error) {
-          status.className = 'status error';
-          status.textContent = error.message || 'Unable to send pickup request. Please try again.';
-        } finally { button.disabled = false; }
-      });
-      form.addEventListener('reset', () => {
-        window.setTimeout(() => {
-          goodsRows.replaceChildren();
-          addGoodRow();
-        }, 0);
-      });
+      function parseResponse(text) { try { return text ? JSON.parse(text) : {}; } catch { throw new Error('The server returned an invalid response.'); } }
+      function requestTotal(request) { return (request.goods || []).reduce((sum, good) => sum + (Number(good.totalAmount) || (Number(good.quantity) || 0) * (Number(good.amount) || 0)), 0); }
+      function renderHistory(requests) { historyList.replaceChildren(); if (!requests.length) { historyList.append(Object.assign(document.createElement('div'), { className: 'empty', textContent: 'No tickets yet.' })); return; } requests.forEach((request) => { const item = document.createElement('article'); item.className = 'history-item'; const head = document.createElement('div'); head.className = 'history-item-head'; const details = document.createElement('div'); const title = document.createElement('h3'); title.textContent = (request.goods || []).map((good) => `${good.name} (${good.quantity})`).join(', ') || 'Pickup ticket'; const location = document.createElement('p'); location.textContent = request.location || 'Location not provided'; details.append(title, location); const badge = document.createElement('span'); badge.className = 'history-status'; badge.textContent = request.status || 'Pending approval'; head.append(details, badge); const meta = document.createElement('div'); meta.className = 'history-meta'; [`${formatDate(request.createdAt)}`, `Pickup date: ${formatPickupDate(request.preferredDate || request.preferredTime)}`, `Quantity: ${(request.goods || []).reduce((sum, good) => sum + (Number(good.quantity) || 0), 0)}`, `Total: ${formatMoney(requestTotal(request))}`].forEach((value) => { const span = document.createElement('span'); span.textContent = value; if (value.startsWith('Total:')) span.className = 'history-total'; meta.append(span); }); item.append(head, meta); historyList.append(item); }); }
+      async function loadHistory() { try { const response = await fetch('/api/pickup-requests?requestType=agent'); const result = parseResponse(await response.text()); if (response.status === 401) return location.assign('agent-login.html'); if (!response.ok) throw new Error(result.error || 'Unable to load history.'); renderHistory(result.requests || []); } catch (error) { historyList.replaceChildren(Object.assign(document.createElement('div'), { className: 'empty', textContent: error.message || 'Unable to load history.' })); } }
+      async function loadSession() { try { const response = await fetch('/api/agent-session'); const result = parseResponse(await response.text()); if (!response.ok || !result.agent) return location.assign('agent-login.html'); document.getElementById('agentName').textContent = result.agent.fullName; await loadHistory(); } catch { location.assign('agent-login.html'); } }
+      document.getElementById('addGoodButton').addEventListener('click', addGoodsRow);
+      form.addEventListener('reset', () => setTimeout(() => { goodsRows.replaceChildren(); addGoodsRow(); pickupStatus.textContent = ''; }, 0));
+      form.addEventListener('submit', async (event) => { event.preventDefault(); const button = form.querySelector('button[type="submit"]'); const data = new FormData(form); const names = data.getAll('goods'); const quantities = data.getAll('quantity'); const amounts = data.getAll('amount'); const goods = names.map((name, index) => ({ name: String(name).trim(), quantity: String(quantities[index] || '').trim(), amount: String(amounts[index] || '').trim() })); const invalid = goods.some((good) => !good.name || !/^\d+$/.test(good.quantity) || Number(good.quantity) < 1 || good.amount === '' || !Number.isFinite(Number(good.amount)) || Number(good.amount) < 0); if (invalid) { pickupStatus.className = 'status error'; pickupStatus.textContent = 'Complete every goods row with a category, whole-number quantity and amount per item.'; return; } if (!String(data.get('location') || '').trim()) { pickupStatus.className = 'status error'; pickupStatus.textContent = 'Add a pickup location.'; return; } button.disabled = true; pickupStatus.className = 'status'; pickupStatus.textContent = 'Creating ticket…'; try { const response = await fetch('/api/pickup-requests', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ requestType: 'agent', goods, preferredDate: data.get('preferredDate') || '', location: data.get('location'), notes: data.get('notes') }) }); const result = parseResponse(await response.text()); if (!response.ok) throw new Error(result.error || 'Unable to create ticket.'); pickupStatus.textContent = 'Ticket created and sent for admin approval.'; form.reset(); mapPreview.classList.remove('is-visible'); locationStatus.textContent = ''; await loadHistory(); } catch (error) { pickupStatus.className = 'status error'; pickupStatus.textContent = error.message || 'Unable to create ticket.'; } finally { button.disabled = false; } });
+      document.getElementById('useLocationButton').addEventListener('click', () => { if (!navigator.geolocation) { locationStatus.className = 'status error'; locationStatus.textContent = 'Device location is not supported; enter it manually.'; return; } const button = document.getElementById('useLocationButton'); button.disabled = true; locationStatus.className = 'status'; locationStatus.textContent = 'Finding your location…'; navigator.geolocation.getCurrentPosition((position) => { const { latitude, longitude, accuracy } = position.coords; const mapsUrl = `https://www.google.com/maps?q=${latitude.toFixed(6)},${longitude.toFixed(6)}`; locationInput.value = `GPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)} (accuracy: ±${Math.round(accuracy)} m)`; locationMap.src = `${mapsUrl}&z=17&output=embed`; openMapsLink.href = mapsUrl; mapPreview.classList.add('is-visible'); locationStatus.textContent = `Location captured within approximately ${Math.round(accuracy)} metres.`; button.disabled = false; button.textContent = 'Update device location'; }, () => { locationStatus.className = 'status error'; locationStatus.textContent = 'Location unavailable. Enter the pickup location manually.'; button.disabled = false; }); });
+      document.getElementById('logoutButton').addEventListener('click', async () => { await fetch('/api/agent-logout', { method: 'POST' }); location.assign('agent-login.html'); });
+      const today = new Date();
+      pickupDateInput.min = [today.getFullYear(), String(today.getMonth() + 1).padStart(2, '0'), String(today.getDate()).padStart(2, '0')].join('-');
+      addGoodsRow(); loadSession();
     </script>
   </body>
 </html>

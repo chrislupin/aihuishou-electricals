@@ -5,7 +5,8 @@
   "description": "Aihuishou Electricals website and agent application endpoint",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --check server.js"
   },
   "dependencies": {
     "dotenv": "^17.2.1",
