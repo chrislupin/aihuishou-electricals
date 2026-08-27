@@ -38,6 +38,10 @@
       .report-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 24px 0 10px; }
       .report-head h2 { margin: 0; font-size: 22px; }
       .count { color: var(--muted); font-size: 13px; }
+      .report-download { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+      .report-download .btn { background: var(--blue-deep); color: #fff; border-color: var(--blue-deep); }
+      .report-download .btn:disabled { cursor: wait; opacity: .65; }
+      .report-status { width: 100%; margin: 0; color: var(--muted); font-size: 12px; }
       .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; background: #fff; box-shadow: 0 10px 24px #14538812; }
       table { width: 100%; min-width: 1080px; border-collapse: collapse; }
       th, td { padding: 14px; border-bottom: 1px solid var(--line); vertical-align: top; text-align: left; }
@@ -119,7 +123,7 @@
           <article class="metric"><span>Combined amount</span><strong id="amountTotal">KSh 0.00</strong><small class="metric-period" id="amountPeriod">All time</small></article>
         </section>
 
-        <div class="report-head"><h2>Detailed tickets</h2><span class="count" id="resultCount"></span></div>
+        <div class="report-head"><h2>Detailed tickets</h2><div class="report-download"><button class="btn" id="generateReport" type="button">Generate &amp; download report</button><span class="count" id="resultCount"></span><p class="report-status" id="reportStatus" role="status" aria-live="polite"></p></div></div>
         <div id="results"></div>
       </section>
     </main>
@@ -270,6 +274,81 @@
         target.replaceChildren(wrap);
       }
 
+      function reportDate(value) {
+        const date = new Date(value);
+        return Number.isNaN(date.getTime())
+          ? 'Unknown date'
+          : new Intl.DateTimeFormat('en-KE', { dateStyle: 'medium' }).format(date);
+      }
+
+      function csvCell(value) {
+        const text = String(value ?? '');
+        return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+      }
+
+      function csvAmount(value) {
+        const amount = Number(value);
+        return Number.isFinite(amount) ? amount.toFixed(2) : '0.00';
+      }
+
+      function reportFilename() {
+        const role = controls.role.value || 'all-roles';
+        const period = controls.range.value === 'custom'
+          ? `${controls.from.value || 'start'}-to-${controls.to.value || 'today'}`
+          : controls.range.value;
+        return `aihuishou-report-${role}-${period}`.replace(/[^a-z0-9-]+/gi, '-').toLowerCase() + '.csv';
+      }
+
+      function downloadReport(items) {
+        const rows = [['Name', 'Date', 'Good', 'Quantity', 'Line amount', 'Total amount']];
+        let total = 0;
+        items.forEach((request) => {
+          const name = personName(request);
+          const date = reportDate(request.createdAt);
+          const goods = Array.isArray(request.goods) ? request.goods : [];
+          if (!goods.length) {
+            rows.push([name, date, 'No goods recorded', '', '0.00', '']);
+          } else {
+            goods.forEach((good) => {
+              rows.push([name, date, good.name || 'Unnamed good', Number(good.quantity) || 0, csvAmount(lineTotal(good)), '']);
+            });
+          }
+          total += requestTotal(request);
+        });
+        rows.push(['TOTAL AMOUNT', '', '', '', '', csvAmount(total)]);
+
+        const csv = '\uFEFF' + rows.map((row) => row.map(csvCell).join(',')).join('\r\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = reportFilename();
+        document.body.append(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 0);
+      }
+
+      function generateReport() {
+        const status = $('#reportStatus');
+        const button = $('#generateReport');
+        const items = filteredRequests();
+        if (!items.length) {
+          status.textContent = 'No tickets match the current analysis filters.';
+          return;
+        }
+        button.disabled = true;
+        status.textContent = 'Preparing your report…';
+        try {
+          downloadReport(items);
+          status.textContent = `Downloaded ${items.length.toLocaleString('en-KE')} ticket${items.length === 1 ? '' : 's'} using the current filters.`;
+        } catch (error) {
+          status.textContent = error.message || 'Unable to generate the report.';
+        } finally {
+          button.disabled = false;
+        }
+      }
+
       function render() {
         const items = filteredRequests();
         renderSummary(items);
@@ -325,6 +404,7 @@
       [controls.person, controls.role, controls.status, controls.from, controls.to].forEach((control) => control.addEventListener('change', render));
       controls.range.addEventListener('change', updateDateInputs);
       $('#clear').addEventListener('click', clearFilters);
+      $('#generateReport').addEventListener('click', generateReport);
       $('#logout').addEventListener('click', async () => { await fetch('/api/admin-logout', { method: 'POST' }); location.assign('admin-login.html'); });
       load();
     </script>

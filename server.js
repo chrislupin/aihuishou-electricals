@@ -7,10 +7,15 @@ const dotenv = require("dotenv");
 
 dotenv.config();
 
-// Keep optional local Atlas credentials outside the repository. Environment
-// variables set by a hosting provider take precedence over this file.
+// Keep optional local Atlas credentials outside the repository. In local
+// development the external file is allowed to replace stale values from the
+// checked-out .env file. In production, hosting-provider environment values
+// always take precedence so secrets are never silently replaced by a file.
 if (process.env.MONGODB_CREDENTIALS_FILE) {
-  const result = dotenv.config({ path: process.env.MONGODB_CREDENTIALS_FILE });
+  const result = dotenv.config({
+    path: process.env.MONGODB_CREDENTIALS_FILE,
+    override: process.env.NODE_ENV !== "production"
+  });
   if (result.error) {
     console.warn("Unable to load MONGODB_CREDENTIALS_FILE:", result.error.message);
   }
