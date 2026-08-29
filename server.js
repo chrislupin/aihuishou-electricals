@@ -1466,9 +1466,29 @@ app.post(
     const requestedDate = typeof req.body?.requestedDate === "string"
       ? req.body.requestedDate.trim()
       : "";
+    const goods = req.body?.goods;
+    const hasSelectedGoodsAndQuantities =
+      Array.isArray(goods) &&
+      goods.length > 0 &&
+      goods.every(
+        (item) =>
+          item &&
+          typeof item.name === "string" &&
+          item.name.trim() &&
+          (typeof item.quantity === "string" || typeof item.quantity === "number") &&
+          String(item.quantity).trim() &&
+          Number.isSafeInteger(Number(item.quantity)) &&
+          Number(item.quantity) >= 1
+      );
 
     if (!isValidDateOnly(requestedDate)) {
       return res.status(400).json({ error: "Choose a valid pickup date." });
+    }
+
+    if (!hasSelectedGoodsAndQuantities) {
+      return res.status(400).json({
+        error: "Select goods from the list and enter a whole-number quantity before scheduling a pickup date."
+      });
     }
 
     try {
@@ -1490,6 +1510,7 @@ app.post(
         id: crypto.randomUUID(),
         agentEmail: req.agent.email,
         requestedDate,
+        goods: goods.map((item) => ({ name: item.name.trim(), quantity: Number(item.quantity) })),
         status: "Pending approval",
         active: true,
         createdAt: new Date().toISOString()
