@@ -23,7 +23,7 @@
       h1, h2, h3 { color: var(--blue-deep); }
       .muted { color: var(--muted); }
       .filters { justify-content: flex-start; margin: 25px 0; }
-      .filters select { padding: 10px; border: 1px solid var(--line); border-radius: 8px; font: inherit; }
+      .filters select, .filters input { padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: #f8fcff; color: var(--ink); font: inherit; }
       .filters label { color: var(--blue-deep); font-size: 13px; font-weight: 700; }
       .card, .empty { margin: 12px 0; padding: 18px; border: 1px solid var(--line); border-radius: 14px; background: #fff; box-shadow: 0 10px 24px #14538812; }
       .summary { width: 100%; margin: 12px 0 28px; border: 1px solid var(--line); border-collapse: collapse; background: #fff; }
@@ -115,6 +115,13 @@
           const amount = Number(good.amount);
           return Number.isFinite(quantity) && Number.isFinite(amount) ? total + quantity * amount : total;
         }, 0);
+      };
+      const isWithinDateRange = (request, fromValue, toValue) => {
+        const createdAt = new Date(request.createdAt);
+        if (Number.isNaN(createdAt.getTime())) return false;
+        const from = fromValue ? new Date(`${fromValue}T00:00:00`) : null;
+        const to = toValue ? new Date(`${toValue}T23:59:59.999`) : null;
+        return (!from || createdAt >= from) && (!to || createdAt <= to);
       };
 
       function showEmpty(container, message) {
@@ -223,11 +230,13 @@
       }
 
       function renderDateApprovals() {
-        root.innerHTML = '<p class="muted date-approval-intro">Review pickup requests independently. Each request shows only the goods, location, notes and date included in that pickup request.</p><section class="filters"><label>Status <select id="dateApprovalStatus"><option value="Pending approval">Pending approval</option><option value="all">All statuses</option><option value="Approved">Approved</option></select></label></section><div id="dateApprovals"></div>';
+        root.innerHTML = '<p class="muted date-approval-intro">Review pickup requests independently. Each request shows only the goods, location, notes and date included in that pickup request.</p><section class="filters"><label>Status <select id="dateApprovalStatus"><option value="Pending approval">Pending approval</option><option value="all">All statuses</option><option value="Approved">Approved</option></select></label><label>From <input id="dateApprovalFrom" type="date" /></label><label>To <input id="dateApprovalTo" type="date" /></label></section><div id="dateApprovals"></div>';
         const statusSelect = $('#dateApprovalStatus');
+        const fromInput = $('#dateApprovalFrom');
+        const toInput = $('#dateApprovalTo');
         const target = $('#dateApprovals');
         const draw = () => {
-          const selected = requests.filter((request) => isPickupRequest(request) && (statusSelect.value === 'all' || request.status === statusSelect.value));
+          const selected = requests.filter((request) => isPickupRequest(request) && (statusSelect.value === 'all' || request.status === statusSelect.value) && isWithinDateRange(request, fromInput.value, toInput.value));
           if (!selected.length) {
             showEmpty(target, statusSelect.value === 'Pending approval' ? 'No pickup requests are waiting for approval.' : 'No pickup requests match this filter.');
             return;
@@ -235,16 +244,20 @@
           listRequests(target, selected, 'No pickup requests match this filter.');
         };
         statusSelect.addEventListener('change', draw);
+        fromInput.addEventListener('change', draw);
+        toInput.addEventListener('change', draw);
         draw();
       }
 
       function renderFiltersAndRequests() {
-        root.innerHTML = '<section class="filters"><label>Person <select id="person"><option value="">All employees and agents</option></select></label><label>Status <select id="status"><option value="all">All statuses</option><option value="Pending approval">Pending approval</option><option value="Approved">Approved</option></select></label></section>' + (viewName === 'overview' ? '<h2>Selected ticket summary</h2><div id="summary"></div><h2>Unapproved agent tickets</h2><div id="agents"></div><h2>Unapproved field employee tickets</h2><div id="fields"></div>' : '<p class="muted">Only approved items are displayed on this page.</p><div id="results"></div>');
+        root.innerHTML = '<section class="filters"><label>Person <select id="person"><option value="">All employees and agents</option></select></label><label>Status <select id="status"><option value="all">All statuses</option><option value="Pending approval">Pending approval</option><option value="Approved">Approved</option></select></label><label>From <input id="requestFrom" type="date" /></label><label>To <input id="requestTo" type="date" /></label></section>' + (viewName === 'overview' ? '<h2>Selected ticket summary</h2><div id="summary"></div><h2>Unapproved agent tickets</h2><div id="agents"></div><h2>Unapproved field employee tickets</h2><div id="fields"></div>' : '<p class="muted">Only approved items are displayed on this page.</p><div id="results"></div>');
         const personSelect = $('#person');
         accounts.forEach((account) => personSelect.add(new Option(`${account.fullName} — ${account.role === 'fieldEmployee' ? 'Field employee' : 'Agent'}`, account.email)));
         const statusSelect = $('#status');
+        const fromInput = $('#requestFrom');
+        const toInput = $('#requestTo');
         const draw = () => {
-          let selected = requests.filter((request) => (!personSelect.value || request.agentEmail === personSelect.value) && (statusSelect.value === 'all' || request.status === statusSelect.value));
+          let selected = requests.filter((request) => (!personSelect.value || request.agentEmail === personSelect.value) && (statusSelect.value === 'all' || request.status === statusSelect.value) && isWithinDateRange(request, fromInput.value, toInput.value));
           if (viewName === 'overview') {
             const tickets = selected.filter((request) => !isPickupRequest(request));
             renderSummary(tickets);
@@ -257,6 +270,8 @@
         };
         personSelect.addEventListener('change', draw);
         statusSelect.addEventListener('change', draw);
+        fromInput.addEventListener('change', draw);
+        toInput.addEventListener('change', draw);
         draw();
       }
 
