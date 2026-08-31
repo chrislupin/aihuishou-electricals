@@ -16,6 +16,10 @@
       label { display: block; margin: 18px 0 6px; color: var(--blue-deep); font-size: 13px; font-weight: 700; }
       input { width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: #f8fcff; color: var(--ink); font: inherit; }
       input:focus { outline: 0; border-color: var(--orange); box-shadow: 0 0 0 3px rgba(35,103,255,.12); }
+      .password-field { position: relative; }
+      .password-field input { padding-right: 76px; }
+      .password-toggle { position: absolute; top: 50%; right: 8px; transform: translateY(-50%); border: 0; border-radius: 6px; padding: 6px 8px; background: transparent; color: var(--orange); font: 700 12px inherit; cursor: pointer; }
+      .honeypot { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
       .btn { display: inline-flex; align-items: center; justify-content: center; margin-top: 22px; padding: 12px 17px; border: 0; border-radius: 8px; background: var(--orange); color: #fff; font: 700 14px inherit; cursor: pointer; }
       .status { min-height: 22px; margin-top: 14px; color: var(--muted); font-size: 13px; }
       .status.error { color: #b42318; }
@@ -33,7 +37,7 @@
         <p class="muted">Sign in to report collected goods to the operations team.</p>
         <form id="fieldLoginForm">
           <label for="fieldEmail">Email address</label><input id="fieldEmail" name="email" type="email" autocomplete="username" required />
-          <label for="fieldPassword">Password</label><input id="fieldPassword" name="password" type="password" autocomplete="current-password" required />
+          <label for="fieldPassword">Password</label><div class="password-field"><input id="fieldPassword" name="password" type="password" autocomplete="current-password" required /><button class="password-toggle" type="button" aria-controls="fieldPassword" aria-pressed="false">Show</button></div>
           <button class="btn" type="submit">Open field dashboard</button>
           <p class="auth-switch"><a href="password-reset.html">Forgot your password?</a></p>
           <p class="status" id="fieldStatus" role="status" aria-live="polite"></p>
@@ -43,7 +47,8 @@
           <label for="signupName">Full name</label><input id="signupName" name="fullName" required />
           <label for="signupPhone">Phone number</label><input id="signupPhone" name="phone" inputmode="tel" required />
           <label for="signupEmail">Email address</label><input id="signupEmail" name="email" type="email" autocomplete="email" required />
-          <label for="signupPassword">Create password</label><input id="signupPassword" name="password" type="password" minlength="8" autocomplete="new-password" required />
+          <label for="signupPassword">Create password</label><div class="password-field"><input id="signupPassword" name="password" type="password" minlength="8" maxlength="256" autocomplete="new-password" required /><button class="password-toggle" type="button" aria-controls="signupPassword" aria-pressed="false">Show</button></div>
+          <div class="honeypot" aria-hidden="true"><label>Leave this field empty<input name="website" type="text" tabindex="-1" autocomplete="off" /></label></div>
           <button class="btn" type="submit">Create field employee account</button>
           <p class="status" id="signupStatus" role="status" aria-live="polite"></p>
           <p class="auth-switch"><button id="loginPrompt" type="button">Return to sign in</button></p>
@@ -54,6 +59,7 @@
       const loginForm = document.getElementById('fieldLoginForm');
       const signupForm = document.getElementById('fieldSignupForm');
       const signupPrompt = document.getElementById('signupPrompt');
+      document.querySelectorAll('.password-toggle').forEach((button) => button.addEventListener('click', () => { const input = document.getElementById(button.getAttribute('aria-controls')); const visible = input.type === 'text'; input.type = visible ? 'password' : 'text'; button.textContent = visible ? 'Show' : 'Hide'; button.setAttribute('aria-pressed', String(!visible)); }));
       signupPrompt.querySelector('button').addEventListener('click', () => { loginForm.classList.add('is-hidden'); signupPrompt.classList.add('is-hidden'); signupForm.classList.remove('is-hidden'); });
       document.getElementById('loginPrompt').addEventListener('click', () => { signupForm.classList.add('is-hidden'); loginForm.classList.remove('is-hidden'); signupPrompt.classList.remove('is-hidden'); });
       loginForm.addEventListener('submit', async (event) => {

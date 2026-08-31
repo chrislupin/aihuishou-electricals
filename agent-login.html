@@ -29,6 +29,9 @@
       label { display: block; margin: 16px 0 6px; color: var(--blue-deep); font-size: 13px; font-weight: 700; }
       input { width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: #f8fcff; color: var(--ink); font: inherit; }
       input:focus { outline: 0; border-color: var(--orange); box-shadow: 0 0 0 3px rgba(35,103,255,.12); }
+      .password-field { position: relative; }
+      .password-field input { padding-right: 76px; }
+      .password-toggle { position: absolute; top: 50%; right: 8px; transform: translateY(-50%); border: 0; border-radius: 6px; padding: 6px 8px; background: transparent; color: var(--orange); font: 700 12px inherit; cursor: pointer; }
       .submit-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 22px; }
       .btn { display: inline-flex; align-items: center; justify-content: center; padding: 12px 17px; border: 0; border-radius: 8px; background: var(--orange); color: #fff; font: 700 14px inherit; cursor: pointer; }
       .status { min-height: 22px; margin: 14px 0 0; color: var(--muted); font-size: 13px; }
@@ -61,12 +64,12 @@
         <section class="access-card" aria-label="Agent account access">
           <div id="loginPanel">
             <h2>Welcome back</h2>
-            <p class="form-note">Use the email and password created from your approval email.</p>
+            <p class="form-note">Use the email and password created from your approval email. If you are waiting for that email, check your spam folder too.</p>
             <form id="loginForm">
               <label for="loginEmail">Email address</label>
               <input id="loginEmail" name="email" type="email" autocomplete="email" required placeholder="you@example.com" />
               <label for="loginPassword">Password</label>
-              <input id="loginPassword" name="password" type="password" autocomplete="current-password" required placeholder="Your password" />
+              <div class="password-field"><input id="loginPassword" name="password" type="password" autocomplete="current-password" required placeholder="Your password" /><button class="password-toggle" type="button" aria-controls="loginPassword" aria-pressed="false">Show</button></div>
               <div class="submit-row"><button class="btn" type="submit">Log in to dashboard</button></div>
               <p class="form-note"><a href="password-reset.html">Forgot your password?</a></p>
               <p class="status" id="loginStatus" role="status" aria-live="polite"></p>
@@ -76,12 +79,12 @@
           <div class="activation-panel" id="activationPanel" hidden>
             <p class="eyebrow" style="color:var(--orange)">Application approved</p>
             <h2>Set your password</h2>
-            <p class="form-note">Choose a password to activate your Agent portal access.</p>
+            <p class="form-note">Choose a password to activate your Agent portal access. If you cannot find the approval email, check your spam folder.</p>
             <form id="activationForm">
               <label for="activationEmail">Email address</label>
               <input id="activationEmail" name="email" type="email" readonly />
               <label for="activationPassword">Create password</label>
-              <input id="activationPassword" name="password" type="password" autocomplete="new-password" minlength="8" required placeholder="At least 8 characters" />
+              <div class="password-field"><input id="activationPassword" name="password" type="password" autocomplete="new-password" minlength="8" maxlength="256" required placeholder="At least 8 characters" /><button class="password-toggle" type="button" aria-controls="activationPassword" aria-pressed="false">Show</button></div>
               <div class="submit-row"><button class="btn" type="submit">Activate agent access</button></div>
               <p class="status" id="activationStatus" role="status" aria-live="polite"></p>
             </form>
@@ -106,6 +109,16 @@
       } else if (invitedEmail) {
         document.getElementById('loginEmail').value = invitedEmail;
       }
+
+      document.querySelectorAll('.password-toggle').forEach((button) => {
+        button.addEventListener('click', () => {
+          const input = document.getElementById(button.getAttribute('aria-controls'));
+          const visible = input.type === 'text';
+          input.type = visible ? 'password' : 'text';
+          button.textContent = visible ? 'Show' : 'Hide';
+          button.setAttribute('aria-pressed', String(!visible));
+        });
+      });
 
       async function readResponse(response) {
         const text = await response.text();

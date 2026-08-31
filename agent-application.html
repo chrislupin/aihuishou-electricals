@@ -35,6 +35,7 @@
       .success[hidden] { display: none; }
       .success { padding: 22px; border-radius: 10px; background: #effbf4; color: #126337; }
       .success h2 { color: #126337; }
+      .honeypot { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
       @media (max-width: 760px) { .main, .grid { grid-template-columns: 1fr; } .main { padding-top: 18px; } .grid { gap: 0; } }
     </style>
   </head>
@@ -60,7 +61,7 @@
         <section class="card" aria-label="Agent application form">
           <div id="applicationContent">
             <h2>Register as an agent</h2>
-            <p class="note">All fields are required and used only to vet your application.</p>
+            <p class="note">All fields are required and used only to vet your application. Check your spam folder for our response.</p>
             <form id="applicationForm" novalidate>
               <div class="grid">
                 <div><label for="firstName">First name</label><input id="firstName" name="firstName" autocomplete="given-name" required maxlength="80" /></div>
@@ -70,13 +71,14 @@
               <label for="phone">Phone number</label><input id="phone" name="phone" inputmode="tel" autocomplete="tel" required maxlength="40" placeholder="+2547XXXXXXXX" />
               <label for="businessName">Business name</label><input id="businessName" name="businessName" autocomplete="organization" required maxlength="160" placeholder="Your business name" />
               <label for="location">Location</label><input id="location" name="location" autocomplete="address-level2" required maxlength="160" placeholder="e.g., Westlands, Nairobi" />
+              <div class="honeypot" aria-hidden="true"><label>Leave this field empty<input name="website" type="text" tabindex="-1" autocomplete="off" /></label></div>
               <button class="btn" type="submit">Submit application</button>
               <p class="status" id="applicationStatus" role="status" aria-live="polite"></p>
             </form>
           </div>
           <div class="success" id="successMessage" hidden>
             <h2>Application received</h2>
-            <p>Thank you. Our team will review your details and email you after the vetting process is complete.</p>
+            <p>Thank you. Our team will review your details and email you after the vetting process is complete. Please check your spam folder if it does not arrive.</p>
           </div>
         </section>
       </main>

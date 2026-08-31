@@ -16,6 +16,9 @@
       label { display: block; margin: 18px 0 6px; color: var(--blue-deep); font-size: 13px; font-weight: 700; }
       input { width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: #f8fcff; color: var(--ink); font: inherit; }
       input:focus { outline: 0; border-color: var(--orange); box-shadow: 0 0 0 3px rgba(35,103,255,.12); }
+      .password-field { position: relative; }
+      .password-field input { padding-right: 76px; }
+      .password-toggle { position: absolute; top: 50%; right: 8px; transform: translateY(-50%); border: 0; border-radius: 6px; padding: 6px 8px; background: transparent; color: var(--orange); font: 700 12px inherit; cursor: pointer; }
       .btn { display: inline-flex; align-items: center; justify-content: center; margin-top: 22px; padding: 12px 17px; border: 0; border-radius: 8px; background: var(--orange); color: #fff; font: 700 14px inherit; cursor: pointer; }
       .status { min-height: 22px; margin-top: 14px; color: var(--muted); font-size: 13px; }
       .status.error { color: #b42318; }
@@ -32,7 +35,7 @@
           <label for="adminEmail">Admin email</label>
           <input id="adminEmail" name="email" type="email" autocomplete="username" required />
           <label for="adminPassword">Admin password</label>
-          <input id="adminPassword" name="password" type="password" autocomplete="current-password" required />
+          <div class="password-field"><input id="adminPassword" name="password" type="password" autocomplete="current-password" required /><button class="password-toggle" type="button" aria-controls="adminPassword" aria-pressed="false">Show</button></div>
           <button class="btn" type="submit">Open request inbox</button>
           <p class="muted"><a href="password-reset.html">Forgot your password?</a></p>
           <p class="status" id="adminStatus" role="status" aria-live="polite"></p>
@@ -40,6 +43,7 @@
       </section>
     </main>
     <script>
+      document.querySelector('.password-toggle').addEventListener('click', (event) => { const button = event.currentTarget; const input = document.getElementById(button.getAttribute('aria-controls')); const visible = input.type === 'text'; input.type = visible ? 'password' : 'text'; button.textContent = visible ? 'Show' : 'Hide'; button.setAttribute('aria-pressed', String(!visible)); });
       document.getElementById('adminLoginForm').addEventListener('submit', async (event) => {
         event.preventDefault();
         const form = event.currentTarget;

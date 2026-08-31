@@ -31,6 +31,8 @@ const app = express();
 const emailTo = "aihuishoulimited@gmail.com";
 const scrypt = promisify(crypto.scrypt);
 const sessionSecret = process.env.SESSION_SECRET || (process.env.NODE_ENV === "production" ? "" : crypto.randomBytes(32).toString("hex"));
+const GOODS_OPTIONS = new Set(['512GB','256GB','128GB','64GB','32GB','16GB','8GB','4GB','CHINESE','TABLET','BIGSMART','IPHONE','CPU','DISPLAY CARDS','BATTERY','HARD DISK','HARD DISK BOARD','RAMS','CAMERA','LAPTOP BOARD','LAPTOP LOW GRADE','ORIGINAL PHONES','COMPUTER 1 ICE','COMPUTER 2 ICE','GREEN BOARD HIGH GRADE','RUBBISH','RUBBISH HIGH GRADE','PRINTERS','CAR BOARD']);
+const MAX_PASSWORD_LENGTH = 256;
 
 let mongoClient = null;
 
@@ -86,9 +88,32 @@ app.set("trust proxy", 1);
 
 app.use(
   helmet({
-    contentSecurityPolicy: false
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        baseUri: ["'self'"],
+        connectSrc: ["'self'"],
+        fontSrc: ["'self'", "https://fonts.gstatic.com"],
+        formAction: ["'self'"],
+        frameAncestors: ["'self'"],
+        frameSrc: ["'self'", "https://www.google.com"],
+        imgSrc: ["'self'", "data:"],
+        objectSrc: ["'none'"],
+        scriptSrc: ["'self'", "'unsafe-inline'"],
+        styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+        upgradeInsecureRequests: process.env.NODE_ENV === "production" ? [] : null
+      }
+    },
+    referrerPolicy: { policy: "strict-origin-when-cross-origin" }
   })
 );
+
+app.use((req, res, next) => {
+  if (process.env.NODE_ENV !== "production" || req.secure) return next();
+  const configuredUrl = typeof process.env.APP_URL === "string" ? process.env.APP_URL.trim().replace(/\/+$/, "") : "";
+  if (!configuredUrl.startsWith("https://")) return next();
+  return res.redirect(308, `${configuredUrl}${req.originalUrl}`);
+});
 
 app.use(
   express.json({
@@ -155,7 +180,32 @@ app.use("/api", async (req, res, next) => {
 });
 
 function normalizeEmail(email) {
-  return email.trim().toLowerCase();
+  return typeof email === "string" ? email.trim().toLowerCase() : "";
+}
+
+function isValidPassword(password) {
+  return typeof password === "string" && password.length >= 8 && password.length <= MAX_PASSWORD_LENGTH;
+}
+
+function isValidDateNotInPast(value) {
+  if (!isValidDateOnly(value)) return false;
+  const today = new Date();
+  const localToday = [today.getFullYear(), String(today.getMonth() + 1).padStart(2, "0"), String(today.getDate()).padStart(2, "0")].join("-");
+  return value >= localToday;
+}
+
+function constantTimeStringEquals(first, second) {
+  const firstHash = crypto.createHash("sha256").update(String(first || "")).digest();
+  const secondHash = crypto.createHash("sha256").update(String(second || "")).digest();
+  return crypto.timingSafeEqual(firstHash, secondHash);
+}
+
+function rejectBotSubmission(req, res, next) {
+  const honeypot = req.body?.website;
+  if (typeof honeypot === "string" && honeypot.trim()) {
+    return res.status(400).json({ error: "Unable to process this submission." });
+  }
+  return next();
 }
 
 function calculateRequestTotal(goods) {
@@ -651,7 +701,7 @@ app.post(
       typeof email !== "string" ||
       typeof password !== "string" ||
       !email.trim() ||
-      !password
+      !isValidPassword(password)
     ) {
       return res.status(400).json({
         error: "Email and password are required."
@@ -769,7 +819,7 @@ app.post(
       typeof email !== "string" ||
       typeof password !== "string" ||
       !email.trim() ||
-      !password
+      !isValidPassword(password)
     ) {
       return res.status(400).json({
         error:
@@ -853,6 +903,7 @@ app.post(
 app.post(
   "/api/field-employee-signup",
   authLimiter,
+  rejectBotSubmission,
   async (req, res) => {
     const {
       fullName,
@@ -881,34 +932,20 @@ app.post(
       });
     }
 
-    if (
-      !/^\S+@\S+\.\S+$/.test(
-        email.trim()
-      )
-    ) {
-      return res.status(400).json({
-        error:
-          "Please provide a valid email address."
-      });
+    const cleanFullName = applicationField(fullName, 160);
+    const cleanPhone = applicationField(phone, 40);
+    const normalizedEmail = applicationEmail(email);
+    if (!cleanFullName || !cleanPhone || !normalizedEmail) {
+      return res.status(400).json({ error: "Enter a valid name, phone number and email address." });
     }
 
-    if (/[<>]/.test(fullName)) {
+    if (!isValidPassword(password)) {
       return res.status(400).json({
-        error: "Full name cannot contain angle brackets."
-      });
-    }
-
-    if (password.length < 8) {
-      return res.status(400).json({
-        error:
-          "Password must be at least 8 characters."
+        error: "Password must be between 8 and 256 characters."
       });
     }
 
     try {
-      const normalizedEmail =
-        normalizeEmail(email);
-
       const salt =
         crypto.randomBytes(16).toString("hex");
 
@@ -922,8 +959,8 @@ app.post(
 
       const account = {
         role: "fieldEmployee",
-        fullName: fullName.trim(),
-        phone: phone.trim(),
+        fullName: cleanFullName,
+        phone: cleanPhone,
         email: normalizedEmail,
         company: "",
         location: "",
@@ -1036,17 +1073,14 @@ app.post(
       password
     } = req.body || {};
 
-    if (
-      !adminEmail ||
-      !process.env.ADMIN_PASSWORD
-    ) {
+    if (!adminEmail || !process.env.ADMIN_PASSWORD) {
       return res.status(503).json({
         error:
           "Admin access has not been configured."
       });
     }
 
-    if (normalizeConfiguredEmail(email) !== adminEmail) {
+    if (!isValidPassword(password) || normalizeConfiguredEmail(email) !== adminEmail) {
       return res.status(401).json({
         error:
           "Email or password is incorrect."
@@ -1055,7 +1089,7 @@ app.post(
 
     const configuredPassword = process.env.ADMIN_PASSWORD;
     const storedAdmin = withoutMongoId(await adminAccountsCollection.findOne({ email: adminEmail }));
-    let passwordMatches = password === configuredPassword;
+    let passwordMatches = constantTimeStringEquals(password, configuredPassword);
     if (storedAdmin?.passwordHash && storedAdmin?.salt) {
       const enteredHash = await scrypt(password, storedAdmin.salt, 64);
       const savedHash = Buffer.from(storedAdmin.passwordHash, "hex");
@@ -1122,14 +1156,14 @@ app.post("/api/password-reset/request", authLimiter, async (req, res) => {
           from: process.env.SMTP_FROM || process.env.SMTP_USER,
           to: email,
           subject: "Reset your Aihuishou password",
-          text: `Use this link within one hour to reset your password:\n${baseUrl}/password-reset.html?token=${token}&email=${encodeURIComponent(email)}`
+          text: `Use this link within one hour to reset your password:\n${baseUrl}/password-reset.html?token=${token}&email=${encodeURIComponent(email)}\n\nIf you cannot find this email, please check your spam or junk folder.`
         });
       } catch (error) {
         console.error("Password reset email failed:", error.message);
       }
     }
 
-    return res.json({ message: "If an account exists for that email, a password-reset link has been sent." });
+    return res.json({ message: "If an account exists for that email, a password-reset link has been sent. Check your inbox and spam folder." });
   } catch (error) {
     console.error("Password reset request failed:", error.message);
     return res.status(500).json({ error: "Unable to process the password reset request." });
@@ -1139,8 +1173,8 @@ app.post("/api/password-reset/request", authLimiter, async (req, res) => {
 app.post("/api/password-reset/confirm", authLimiter, async (req, res) => {
   const { email, token, password } = req.body || {};
   const normalizedEmail = typeof email === "string" ? normalizeEmail(email) : "";
-  if (!normalizedEmail || typeof token !== "string" || typeof password !== "string" || password.length < 8) {
-    return res.status(400).json({ error: "Enter a valid reset link and a password of at least 8 characters." });
+  if (!normalizedEmail || typeof token !== "string" || !isValidPassword(password)) {
+    return res.status(400).json({ error: "Enter a valid reset link and a password between 8 and 256 characters." });
   }
 
   try {
@@ -1236,6 +1270,8 @@ async function sendApprovedAgentEmail(application, accessUrl) {
       "Use the secure link below within seven days to set your password and access the Agent login screen:",
       accessUrl,
       "",
+      "If you do not see this message in your inbox, please check your spam or junk folder.",
+      "",
       "If you did not apply, you can safely ignore this email.",
       "",
       "Aihuishou Electricals"
@@ -1254,6 +1290,8 @@ async function sendRejectedAgentEmail(application) {
       "Thank you for your interest in becoming an Aihuishou agent and for taking the time to apply.",
       "At the moment, we are not recruiting agents in your region. We will keep your details on file and reach out if this changes.",
       "",
+      "If you do not see future messages from us in your inbox, please check your spam or junk folder.",
+      "",
       "We appreciate your interest in working with us.",
       "",
       "Aihuishou Electricals"
@@ -1261,7 +1299,7 @@ async function sendRejectedAgentEmail(application) {
   });
 }
 
-app.post("/api/agent-applications", requestLimiter, async (req, res) => {
+app.post("/api/agent-applications", requestLimiter, rejectBotSubmission, async (req, res) => {
   const firstName = applicationField(req.body?.firstName, 80);
   const lastName = applicationField(req.body?.lastName, 80);
   const phone = applicationField(req.body?.phone, 40);
@@ -1306,7 +1344,7 @@ app.post("/api/agent-applications", requestLimiter, async (req, res) => {
     await sendApplicationNotification(application);
 
     return res.status(201).json({
-      message: "Your application has been received. We will email you after the vetting process is complete."
+      message: "Your application has been received. We will email you after the vetting process is complete; please check your spam folder too."
     });
   } catch (error) {
     console.error("Agent application creation failed:", error.message);
@@ -1319,8 +1357,8 @@ app.post("/api/agent-invitation/confirm", authLimiter, async (req, res) => {
   const token = typeof req.body?.token === "string" ? req.body.token : "";
   const password = typeof req.body?.password === "string" ? req.body.password : "";
 
-  if (!email || !token || password.length < 8) {
-    return res.status(400).json({ error: "Use a valid access link and a password of at least 8 characters." });
+  if (!email || !token || !isValidPassword(password)) {
+    return res.status(400).json({ error: "Use a valid access link and a password between 8 and 256 characters." });
   }
 
   try {
@@ -1909,7 +1947,7 @@ app.post(
           item &&
           typeof item.name ===
             "string" &&
-          item.name.trim() &&
+          GOODS_OPTIONS.has(item.name.trim()) &&
           (
             typeof item.quantity ===
               "number" ||
@@ -1932,7 +1970,10 @@ app.post(
           )
       );
 
-    const fields = isAgentPickup ? [location] : [];
+    const cleanLocation = applicationField(location, 160);
+    const cleanNotes = applicationField(notes || "", 1000);
+    const invalidNotes = typeof notes !== "undefined" && typeof notes !== "string" || (typeof notes === "string" && notes.trim() && !cleanNotes);
+    const fields = isAgentPickup ? [cleanLocation] : [];
 
     const missingFields = fields.some(
       (value) => typeof value !== "string" || !value.trim()
@@ -1962,14 +2003,18 @@ app.post(
       });
     }
 
+    if (invalidNotes) {
+      return res.status(400).json({ error: "Notes must be plain text and no longer than 1,000 characters." });
+    }
+
     // `preferredTime` is accepted but ignored for one release so older cached
     // dashboards can still create tickets while clients migrate to dates.
     const cleanPreferredDate = typeof preferredDate === "string" ? preferredDate.trim() : "";
     if (submittedRequestType === "agentPickup" && !cleanPreferredDate) {
       return res.status(400).json({ error: "Choose a pickup date." });
     }
-    if (cleanPreferredDate && !isValidDateOnly(cleanPreferredDate)) {
-      return res.status(400).json({ error: "Choose a valid pickup date." });
+    if (cleanPreferredDate && !(submittedRequestType === "agentPickup" ? isValidDateNotInPast(cleanPreferredDate) : isValidDateOnly(cleanPreferredDate))) {
+      return res.status(400).json({ error: submittedRequestType === "agentPickup" ? "Choose a valid pickup date that is not in the past." : "Choose a valid pickup date." });
     }
     const cleanedGoods =
       goods.map((item) => ({
@@ -1997,11 +2042,10 @@ app.post(
       `Phone: ${req.agent.phone}`,
       `Goods: ${goodsText}`,
       `Preferred pickup date: ${cleanPreferredDate || "Not provided"}`,
-      `Pickup location: ${isAgentPickup ? location.trim() : "Not provided"}`,
+      `Pickup location: ${isAgentPickup ? cleanLocation : "Not provided"}`,
       `Collection notes: ${
-        typeof notes === "string" &&
-        notes.trim()
-          ? notes.trim()
+        cleanNotes
+          ? cleanNotes
           : "None"
       }`
     ].join("\n");
@@ -2014,11 +2058,8 @@ app.post(
       goods: cleanedGoods,
       totalAmount: calculateRequestTotal(cleanedGoods),
       preferredDate: cleanPreferredDate,
-      location: isAgentPickup ? location.trim() : "",
-      notes:
-        typeof notes === "string"
-          ? notes.trim()
-          : "",
+      location: isAgentPickup ? cleanLocation : "",
+      notes: cleanNotes,
       status:
         "Pending approval",
       createdAt:
