@@ -46,6 +46,7 @@
         </form>
       </section>
     </main>
+    <script src="language.js"></script>
     <script>
       document.querySelector('.password-toggle').addEventListener('click', (event) => { const button = event.currentTarget; const input = document.getElementById(button.getAttribute('aria-controls')); const visible = input.type === 'text'; input.type = visible ? 'password' : 'text'; button.classList.toggle('is-visible', !visible); button.setAttribute('aria-label', visible ? 'Show password' : 'Hide password'); button.setAttribute('aria-pressed', String(!visible)); });
       document.getElementById('adminLoginForm').addEventListener('submit', async (event) => {
