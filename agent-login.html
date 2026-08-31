@@ -3,7 +3,8 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Agent access | Aihuishou Electricals</title>
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Agent login | Aihuishou Electricals</title>
     <link rel="stylesheet" href="styles.css" />
     <style>
       * { box-sizing: border-box; }
@@ -23,23 +24,19 @@
       .intro-points div { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; }
       .intro-points strong { color: var(--lime); }
       .access-card { padding: clamp(22px, 4vw, 36px); background: rgba(255,255,255,.86); }
-      .tabs { display: grid; grid-template-columns: 1fr 1fr; padding: 4px; gap: 4px; border-radius: 10px; background: #e5f2ff; }
-      .tab { border: 0; border-radius: 7px; padding: 10px; background: transparent; color: var(--muted); font: 600 14px inherit; cursor: pointer; }
-      .tab[aria-selected="true"] { background: #fff; color: var(--blue-deep); box-shadow: 0 3px 10px rgba(8,42,98,.08); }
-      .access-panel { display: none; }
-      .access-panel.is-active { display: block; }
-      h2 { margin: 28px 0 5px; color: var(--blue-deep); font-size: 25px; letter-spacing: -1px; }
+      h2 { margin: 0 0 5px; color: var(--blue-deep); font-size: 25px; letter-spacing: -1px; }
       .form-note { margin: 0; color: var(--muted); font-size: 14px; }
       label { display: block; margin: 16px 0 6px; color: var(--blue-deep); font-size: 13px; font-weight: 700; }
-      input, select { width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: #f8fcff; color: var(--ink); font: inherit; }
-      input:focus, select:focus { outline: 0; border-color: var(--orange); box-shadow: 0 0 0 3px rgba(35,103,255,.12); }
-      .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+      input { width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: #f8fcff; color: var(--ink); font: inherit; }
+      input:focus { outline: 0; border-color: var(--orange); box-shadow: 0 0 0 3px rgba(35,103,255,.12); }
       .submit-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 22px; }
       .btn { display: inline-flex; align-items: center; justify-content: center; padding: 12px 17px; border: 0; border-radius: 8px; background: var(--orange); color: #fff; font: 700 14px inherit; cursor: pointer; }
       .status { min-height: 22px; margin: 14px 0 0; color: var(--muted); font-size: 13px; }
       .status.error { color: #b42318; }
-      .link-button { border: 0; background: none; color: var(--orange); font: 700 13px inherit; cursor: pointer; }
-      @media (max-width: 760px) { .portal-main { grid-template-columns: 1fr; padding-top: 18px; } .form-grid { grid-template-columns: 1fr; gap: 0; } }
+      .activation-panel[hidden] { display: none; }
+      .application-link { margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; }
+      .application-link a { color: var(--orange); font-weight: 700; }
+      @media (max-width: 760px) { .portal-main { grid-template-columns: 1fr; padding-top: 18px; } }
     </style>
   </head>
   <body>
@@ -53,23 +50,18 @@
         <section class="portal-intro">
           <p class="eyebrow">Agent portal</p>
           <h1>Coordinate every pickup in one place.</h1>
-          <p>Sign in to send collection requests with the goods, quantity and pickup details ready for the operations team.</p>
+          <p>Approved Aihuishou agents can sign in to send collection requests with the goods, quantity and pickup details ready for operations.</p>
           <div class="intro-points">
             <div><strong>01</strong><span>Submit pickup requests in a few clear steps.</span></div>
             <div><strong>02</strong><span>Keep your agent contact details attached to each request.</span></div>
-            <div><strong>03</strong><span>New to Aihuishou? Create an agent account below.</span></div>
+            <div><strong>03</strong><span>Not yet an agent? Apply first and await our email.</span></div>
           </div>
         </section>
 
         <section class="access-card" aria-label="Agent account access">
-          <div class="tabs" role="tablist" aria-label="Account access">
-            <button class="tab" id="login-tab" role="tab" aria-selected="true" aria-controls="login-panel">Log in</button>
-            <button class="tab" id="signup-tab" role="tab" aria-selected="false" aria-controls="signup-panel">Sign up</button>
-          </div>
-
-          <div class="access-panel is-active" id="login-panel" role="tabpanel" aria-labelledby="login-tab">
+          <div id="loginPanel">
             <h2>Welcome back</h2>
-            <p class="form-note">Use the email and password registered to your agent account.</p>
+            <p class="form-note">Use the email and password created from your approval email.</p>
             <form id="loginForm">
               <label for="loginEmail">Email address</label>
               <input id="loginEmail" name="email" type="email" autocomplete="email" required placeholder="you@example.com" />
@@ -81,65 +73,83 @@
             </form>
           </div>
 
-          <div class="access-panel" id="signup-panel" role="tabpanel" aria-labelledby="signup-tab">
-            <h2>Create an agent account</h2>
-            <p class="form-note">Your account lets you securely submit and identify pickup requests.</p>
-            <form id="signupForm">
-              <div class="form-grid">
-                <div><label for="signupName">Full name</label><input id="signupName" name="fullName" required placeholder="John Otieno" /></div>
-                <div><label for="signupPhone">Phone number</label><input id="signupPhone" name="phone" inputmode="tel" required placeholder="+2547XXXXXXXX" /></div>
-              </div>
-              <label for="signupEmail">Email address</label><input id="signupEmail" name="email" type="email" autocomplete="email" required placeholder="you@example.com" />
-              <div class="form-grid">
-                <div><label for="signupCompany">Business / company <span class="form-note">(optional)</span></label><input id="signupCompany" name="company" placeholder="Business name" /></div>
-                <div><label for="signupLocation">Your location</label><input id="signupLocation" name="location" required placeholder="e.g., Westlands, Nairobi" /></div>
-              </div>
-              <label for="signupPassword">Create password</label><input id="signupPassword" name="password" type="password" autocomplete="new-password" minlength="8" required placeholder="At least 8 characters" />
-              <div class="submit-row"><button class="btn" type="submit">Create account</button></div>
-              <p class="status" id="signupStatus" role="status" aria-live="polite"></p>
+          <div class="activation-panel" id="activationPanel" hidden>
+            <p class="eyebrow" style="color:var(--orange)">Application approved</p>
+            <h2>Set your password</h2>
+            <p class="form-note">Choose a password to activate your Agent portal access.</p>
+            <form id="activationForm">
+              <label for="activationEmail">Email address</label>
+              <input id="activationEmail" name="email" type="email" readonly />
+              <label for="activationPassword">Create password</label>
+              <input id="activationPassword" name="password" type="password" autocomplete="new-password" minlength="8" required placeholder="At least 8 characters" />
+              <div class="submit-row"><button class="btn" type="submit">Activate agent access</button></div>
+              <p class="status" id="activationStatus" role="status" aria-live="polite"></p>
             </form>
           </div>
+
+          <p class="application-link">Interested in becoming an agent? <a href="agent-application.html">Join us</a>.</p>
         </section>
       </main>
     </div>
 
     <script>
-      const tabs = document.querySelectorAll('.tab');
-      const panels = document.querySelectorAll('.access-panel');
-      function showPanel(name) {
-        tabs.forEach((tab) => tab.setAttribute('aria-selected', String(tab.id === `${name}-tab`)));
-        panels.forEach((panel) => panel.classList.toggle('is-active', panel.id === `${name}-panel`));
-      }
-      tabs.forEach((tab) => tab.addEventListener('click', () => showPanel(tab.id.replace('-tab', ''))));
-      if (location.hash === '#signup') showPanel('signup');
+      const query = new URLSearchParams(location.search);
+      const invite = query.get('invite');
+      const invitedEmail = query.get('email');
+      const loginPanel = document.getElementById('loginPanel');
+      const activationPanel = document.getElementById('activationPanel');
 
-      async function submitAccountForm(form, endpoint, statusElement) {
+      if (invite && invitedEmail) {
+        loginPanel.hidden = true;
+        activationPanel.hidden = false;
+        document.getElementById('activationEmail').value = invitedEmail;
+      } else if (invitedEmail) {
+        document.getElementById('loginEmail').value = invitedEmail;
+      }
+
+      async function readResponse(response) {
+        const text = await response.text();
+        try { return text ? JSON.parse(text) : {}; }
+        catch { throw new Error('The server returned an invalid response. Please refresh and try again.'); }
+      }
+
+      document.getElementById('loginForm').addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const form = event.currentTarget;
         const button = form.querySelector('button[type="submit"]');
-        const payload = Object.fromEntries(new FormData(form).entries());
+        const status = document.getElementById('loginStatus');
         button.disabled = true;
-        statusElement.className = 'status';
-        statusElement.textContent = 'Please wait...';
+        status.className = 'status';
+        status.textContent = 'Signing in...';
         try {
-          const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-          const responseText = await response.text();
-          let result = {};
-          if (responseText) {
-            try { result = JSON.parse(responseText); }
-            catch { throw new Error('The server returned an invalid response. Please refresh and try again.'); }
-          }
-          if (!responseText) throw new Error('The server did not return a response. Please make sure the website server is running and try again.');
-          if (!response.ok) throw new Error(result.error || 'Unable to continue.');
-          if (!result.agent) throw new Error('Your account could not be confirmed. Please try again.');
+          const response = await fetch('/api/agent-login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.fromEntries(new FormData(form).entries())) });
+          const result = await readResponse(response);
+          if (!response.ok || !result.agent) throw new Error(result.error || 'Unable to sign in.');
           window.location.assign('agent-dashboard.html');
         } catch (error) {
-          statusElement.className = 'status error';
-          statusElement.textContent = error.message || 'Unable to continue. Please try again.';
-        } finally {
-          button.disabled = false;
-        }
-      }
-      document.getElementById('loginForm').addEventListener('submit', (event) => { event.preventDefault(); submitAccountForm(event.currentTarget, '/api/agent-login', document.getElementById('loginStatus')); });
-      document.getElementById('signupForm').addEventListener('submit', (event) => { event.preventDefault(); submitAccountForm(event.currentTarget, '/api/agent-signup', document.getElementById('signupStatus')); });
+          status.className = 'status error';
+          status.textContent = error.message || 'Unable to sign in. Please try again.';
+        } finally { button.disabled = false; }
+      });
+
+      document.getElementById('activationForm').addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const form = event.currentTarget;
+        const button = form.querySelector('button[type="submit"]');
+        const status = document.getElementById('activationStatus');
+        button.disabled = true;
+        status.className = 'status';
+        status.textContent = 'Activating your account...';
+        try {
+          const response = await fetch('/api/agent-invitation/confirm', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: invitedEmail, token: invite, password: new FormData(form).get('password') }) });
+          const result = await readResponse(response);
+          if (!response.ok || !result.agent) throw new Error(result.error || 'Unable to activate your account.');
+          window.location.assign('agent-dashboard.html');
+        } catch (error) {
+          status.className = 'status error';
+          status.textContent = error.message || 'Unable to activate your account. Please try again.';
+        } finally { button.disabled = false; }
+      });
     </script>
   </body>
 </html>

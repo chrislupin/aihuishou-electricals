@@ -61,6 +61,7 @@
         <a href="admin-dashboard.html"><img src="images/company-logo.png" alt="Aihuishou Electricals" /></a>
         <nav class="nav">
           <a data-view="overview" href="admin-dashboard.html">Overview &amp; unapproved</a>
+          <a data-view="applications" href="admin-dashboard.html?view=applications">Agent applications</a>
           <a data-view="pickup-dates" href="admin-dashboard.html?view=pickup-dates">Pickup dates approval</a>
           <a data-view="approved-agents" href="admin-dashboard.html?view=approved-agents">Approved agent tickets</a>
           <a data-view="approved-fields" href="admin-dashboard.html?view=approved-fields">Approved field employee tickets</a>
@@ -85,6 +86,7 @@
       const root = $('#view');
       const titles = {
         overview: 'Ticket inbox',
+        applications: 'Agent applications',
         'pickup-dates': 'Pickup dates approval',
         'approved-agents': 'Approved agent tickets',
         'approved-fields': 'Approved field employee tickets',
@@ -93,6 +95,7 @@
       let requests = [];
       let accounts = [];
       let dateApprovals = [];
+      let applications = [];
 
       $('#title').textContent = titles[viewName] || titles.overview;
       document.querySelector(`[data-view="${viewName}"]`)?.classList.add('active');
@@ -347,26 +350,119 @@
         });
       }
 
+      async function reviewApplication(application, action) {
+        const actionLabels = { approve: 'approve', reject: 'reject', 'resend-access': 'resend the access link for' };
+        if (action === 'reject' && !confirm(`Reject ${application.fullName}'s application? They will receive a polite regional-recruitment email.`)) return;
+        if (action === 'approve' && !confirm(`Approve ${application.fullName}? They will receive a secure account-access email.`)) return;
+        try {
+          const response = await fetch(`/api/admin/agent-applications/${encodeURIComponent(application.id)}/${action}`, { method: 'POST' });
+          const result = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(result.error || `Unable to ${actionLabels[action]} this application.`);
+          if (result.message) alert(result.message);
+          load();
+        } catch (error) {
+          alert(error.message || `Unable to ${actionLabels[action]} this application.`);
+        }
+      }
+
+      function renderApplications() {
+        root.innerHTML = '<p class="muted">Review prospective agents before they receive access to the Agent portal.</p><section class="filters"><label>Status <select id="applicationStatus"><option value="Pending">Pending review</option><option value="all">All applications</option><option value="Approved">Approved</option><option value="Rejected">Rejected</option></select></label></section><div id="applications"></div>';
+        const statusSelect = $('#applicationStatus');
+        const target = $('#applications');
+        const draw = () => {
+          const selected = applications.filter((application) => statusSelect.value === 'all' || application.status === statusSelect.value);
+          if (!selected.length) {
+            showEmpty(target, statusSelect.value === 'Pending' ? 'No agent applications are waiting for review.' : 'No agent applications match this filter.');
+            return;
+          }
+          const cards = selected.map((application) => {
+            const card = document.createElement('article');
+            card.className = 'card';
+            const top = document.createElement('div');
+            top.className = 'request-top';
+            const heading = document.createElement('div');
+            const name = document.createElement('h3');
+            name.textContent = application.fullName || 'Unnamed applicant';
+            const submitted = document.createElement('p');
+            submitted.className = 'muted';
+            submitted.textContent = `Submitted ${formatDate(application.createdAt)}`;
+            heading.append(name, submitted);
+            const badge = document.createElement('span');
+            badge.className = `badge${application.status === 'Approved' ? ' approved' : application.status === 'Rejected' ? ' rejected' : ''}`;
+            badge.textContent = application.status || 'Pending';
+            top.append(heading, badge);
+            const details = document.createElement('div');
+            details.className = 'details';
+            [
+              ['Email', application.email],
+              ['Phone number', application.phone],
+              ['Business name', application.businessName],
+              ['Location', application.location],
+              ['Applicant email', application.status === 'Approved' ? (application.accessActivatedAt ? 'Access activated' : application.accessEmailStatus || 'Pending') : application.status === 'Rejected' ? (application.rejectionEmailStatus || 'Pending') : 'Not sent yet']
+            ].forEach(([label, value]) => {
+              const item = document.createElement('div');
+              const strong = document.createElement('strong');
+              const text = document.createElement('span');
+              strong.textContent = label;
+              text.textContent = value || '—';
+              item.append(strong, text);
+              details.append(item);
+            });
+            const actions = document.createElement('div');
+            actions.className = 'actions';
+            if (application.status === 'Pending') {
+              const approve = document.createElement('button');
+              approve.className = 'btn';
+              approve.type = 'button';
+              approve.textContent = 'Approve & send access';
+              approve.addEventListener('click', () => reviewApplication(application, 'approve'));
+              const reject = document.createElement('button');
+              reject.className = 'btn danger';
+              reject.type = 'button';
+              reject.textContent = 'Reject';
+              reject.addEventListener('click', () => reviewApplication(application, 'reject'));
+              actions.append(approve, reject);
+            } else if (application.status === 'Approved' && !application.accessActivatedAt) {
+              const resend = document.createElement('button');
+              resend.className = 'btn ghost';
+              resend.type = 'button';
+              resend.textContent = 'Resend access link';
+              resend.addEventListener('click', () => reviewApplication(application, 'resend-access'));
+              actions.append(resend);
+            }
+            card.append(top, details, actions);
+            return card;
+          });
+          target.replaceChildren(...cards);
+        };
+        statusSelect.addEventListener('change', draw);
+        draw();
+      }
+
       async function load() {
         root.replaceChildren();
         try {
-          const [requestResponse, accountResponse, dateApprovalResponse] = await Promise.all([fetch('/api/admin/pickup-requests'), fetch('/api/admin/accounts'), fetch('/api/admin/pickup-date-requests')]);
-          if (requestResponse.status === 401 || accountResponse.status === 401 || dateApprovalResponse.status === 401) {
+          const [requestResponse, accountResponse, dateApprovalResponse, applicationResponse] = await Promise.all([fetch('/api/admin/pickup-requests'), fetch('/api/admin/accounts'), fetch('/api/admin/pickup-date-requests'), fetch('/api/admin/agent-applications')]);
+          if (requestResponse.status === 401 || accountResponse.status === 401 || dateApprovalResponse.status === 401 || applicationResponse.status === 401) {
             location.assign('admin-login.html');
             return;
           }
           const requestData = await requestResponse.json();
           const accountData = await accountResponse.json();
           const dateApprovalData = await dateApprovalResponse.json();
+          const applicationData = await applicationResponse.json();
           if (!requestResponse.ok) throw new Error(requestData.error || 'Unable to load pickup requests.');
           if (!accountResponse.ok) throw new Error(accountData.error || 'Unable to load accounts.');
           if (!dateApprovalResponse.ok) throw new Error(dateApprovalData.error || 'Unable to load pickup date approvals.');
+          if (!applicationResponse.ok) throw new Error(applicationData.error || 'Unable to load agent applications.');
           requests = requestData.requests || [];
           accounts = accountData.accounts || [];
           dateApprovals = dateApprovalData.requests || [];
+          applications = applicationData.applications || [];
           if (viewName === 'approved-agents') requests = requests.filter((request) => !isField(request) && request.status === 'Approved');
           if (viewName === 'approved-fields') requests = requests.filter((request) => isField(request) && request.status === 'Approved');
           if (viewName === 'accounts') renderAccounts();
+          else if (viewName === 'applications') renderApplications();
           else if (viewName === 'pickup-dates') renderDateApprovals();
           else renderFiltersAndRequests();
         } catch (error) {

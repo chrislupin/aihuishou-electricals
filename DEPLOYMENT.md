@@ -12,7 +12,7 @@ Configure these in the hosting provider, not in Git:
 - `MONGODB_URI`: Atlas connection string (the database user must have read/write access)
 - `MONGODB_DB=aihuishou` (or your chosen database name)
 - `SESSION_SECRET`: a unique, random value of at least 32 characters; required for Vercel's stateless login cookies
-- `APP_URL`: the production Vercel URL, used in password-reset emails
+- `APP_URL`: the production public URL, used in password-reset and approved-agent access emails
 - `SMTP_HOST=smtp.gmail.com`
 - `SMTP_PORT=587`
 - `SMTP_SECURE=false`
@@ -32,7 +32,7 @@ Never deploy the local `.env` file.
 2. In Vercel, import the repository and add every required environment variable for Production, Preview, and Development as appropriate. The included `vercel.json` routes pages and API calls through the Express function.
 3. Configure HTTPS and point the admin subdomain to the same service.
 4. Confirm `/health` returns `{"status":"ok"}`.
-5. Test agent signup, field employee signup, pickup submission, admin login, approval, account deletion, filtering, and password reset.
+5. Test agent application submission, admin approval and rejection emails, the approved-agent password-setup link, field employee signup, pickup submission, admin login, account deletion, filtering, and password reset.
 6. Rotate any credentials used during local testing.
 7. Back up the `data` directory if using file storage.
 

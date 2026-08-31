@@ -53,6 +53,8 @@ const pickupRequestsCollection = database?.collection("pickup_requests");
 const pickupDateRequestsCollection = database?.collection("pickup_date_requests");
 const passwordResetCollection = database?.collection("password_resets");
 const adminAccountsCollection = database?.collection("admin_accounts");
+const agentApplicationsCollection = database?.collection("agent_applications");
+const agentAccessInvitesCollection = database?.collection("agent_access_invites");
 
 const adminEmail = normalizeConfiguredEmail(process.env.ADMIN_EMAIL);
 
@@ -420,7 +422,12 @@ async function ensureDatabase() {
         ),
         passwordResetCollection.createIndex({ email: 1 }),
         passwordResetCollection.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
-        adminAccountsCollection.createIndex({ email: 1 }, { unique: true })
+        adminAccountsCollection.createIndex({ email: 1 }, { unique: true }),
+        agentApplicationsCollection.createIndex({ id: 1 }, { unique: true }),
+        agentApplicationsCollection.createIndex({ email: 1, status: 1, createdAt: -1 }),
+        agentAccessInvitesCollection.createIndex({ id: 1 }, { unique: true }),
+        agentAccessInvitesCollection.createIndex({ email: 1 }),
+        agentAccessInvitesCollection.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 })
       ]);
     })().catch((error) => {
       databaseReady = undefined;
@@ -503,7 +510,12 @@ async function getCurrentAgent(req) {
   const account = await getAccountByEmail(session.email);
   // Older migrated agent records predate the role field. Anything that is
   // not explicitly a field employee remains an agent for compatibility.
-  return account && account.role !== "fieldEmployee" ? account : null;
+  return account &&
+    account.role !== "fieldEmployee" &&
+    account.accessStatus !== "invited" &&
+    account.accessStatus !== "disabled"
+    ? account
+    : null;
 }
 
 async function requireAgent(req, res, next) {
@@ -629,152 +641,6 @@ async function requirePickupUser(req, res, next) {
 }
 
 app.post(
-  "/api/agent-signup",
-  authLimiter,
-  async (req, res) => {
-    const {
-      fullName,
-      phone,
-      email,
-      company,
-      location,
-      password
-    } = req.body || {};
-
-    const fields = [
-      fullName,
-      phone,
-      email,
-      location,
-      password
-    ];
-
-    if (
-      fields.some(
-        (value) =>
-          typeof value !== "string" ||
-          !value.trim()
-      )
-    ) {
-      return res.status(400).json({
-        error:
-          "Full name, phone, email, location and password are required."
-      });
-    }
-
-    if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
-      return res.status(400).json({
-        error: "Please provide a valid email address."
-      });
-    }
-
-    if (/[<>]/.test(fullName)) {
-      return res.status(400).json({
-        error: "Full name cannot contain angle brackets."
-      });
-    }
-
-    if (password.length < 8) {
-      return res.status(400).json({
-        error:
-          "Password must be at least 8 characters."
-      });
-    }
-
-    try {
-      const normalizedEmail =
-        normalizeEmail(email);
-
-      const salt =
-        crypto.randomBytes(16).toString("hex");
-
-      const passwordHash = (
-        await scrypt(password, salt, 64)
-      ).toString("hex");
-
-      const account = {
-        role: "agent",
-        fullName: fullName.trim(),
-        phone: phone.trim(),
-        email: normalizedEmail,
-        company:
-          typeof company === "string"
-            ? company.trim()
-            : "",
-        location: location.trim(),
-        salt,
-        passwordHash,
-        createdAt:
-          new Date().toISOString()
-      };
-
-      try {
-        await accountsCollection.insertOne(account);
-      } catch (error) {
-        if (error?.code === 11000) {
-          return res.status(409).json({
-            error: "An account already exists for this email. Please sign in."
-          });
-        }
-
-        throw error;
-      }
-
-      const application = [
-        "New Aihuishou agent signup",
-        "",
-        `Full name: ${account.fullName}`,
-        `Phone: ${account.phone}`,
-        `Email: ${account.email}`,
-        `Business/Company: ${
-          account.company || "Not provided"
-        }`,
-        `Location: ${account.location}`
-      ].join("\n");
-
-      try {
-        await transporter.sendMail({
-          from:
-            process.env.SMTP_FROM ||
-            process.env.SMTP_USER,
-          to: emailTo,
-          replyTo: account.email,
-          subject:
-            `New agent signup: ${account.fullName}`,
-          text: application
-        });
-      } catch (mailError) {
-        console.error(
-          "Agent signup email failed:",
-          mailError.message
-        );
-      }
-
-      createSession(res, account);
-
-      return res.status(201).json({
-        message: "Account created.",
-        agent: {
-          fullName: account.fullName,
-          phone: account.phone,
-          email: account.email
-        }
-      });
-    } catch (error) {
-      console.error(
-        "Agent signup failed:",
-        error.message
-      );
-
-      return res.status(500).json({
-        error:
-          "Unable to create your agent account. Please try again."
-      });
-    }
-  }
-);
-
-app.post(
   "/api/agent-login",
   authLimiter,
   async (req, res) => {
@@ -793,16 +659,14 @@ app.post(
     }
 
     try {
-      const account = (
-        await readAccounts()
-      ).find(
-        (item) =>
-          item.email ===
-            normalizeEmail(email) &&
-          item.role !== "fieldEmployee"
-      );
+      const account = await getAccountByEmail(normalizeEmail(email));
 
-      if (!account) {
+      if (
+        !account ||
+        account.role === "fieldEmployee" ||
+        !account.salt ||
+        !account.passwordHash
+      ) {
         return res.status(401).json({
           error:
             "Email or password is incorrect."
@@ -831,6 +695,12 @@ app.post(
         return res.status(401).json({
           error:
             "Email or password is incorrect."
+        });
+      }
+
+      if (account.accessStatus && account.accessStatus !== "active") {
+        return res.status(403).json({
+          error: "Please use the account-access link sent after your application was approved."
         });
       }
 
@@ -1295,91 +1165,197 @@ app.post("/api/password-reset/confirm", authLimiter, async (req, res) => {
   }
 });
 
-app.post(
-  "/api/agent-applications",
-  requestLimiter,
-  async (req, res) => {
-    const {
-      fullName,
-      phone,
-      email,
-      company,
-      location
-    } = req.body || {};
+function applicationField(value, maximumLength) {
+  if (typeof value !== "string") return "";
+  const cleaned = value.trim();
+  return cleaned && cleaned.length <= maximumLength && !/[<>]/.test(cleaned)
+    ? cleaned
+    : "";
+}
 
-    const fields = [
-      fullName,
-      phone,
-      email,
-      location
-    ];
+function applicationEmail(value) {
+  const email = applicationField(value, 254).toLowerCase();
+  return /^\S+@\S+\.\S+$/.test(email) ? email : "";
+}
 
-    if (
-      fields.some(
-        (value) =>
-          typeof value !== "string" ||
-          !value.trim()
-      )
-    ) {
-      return res.status(400).json({
-        error:
-          "Full name, phone, email and location are required."
-      });
-    }
+function publicBaseUrl(req) {
+  return (process.env.APP_URL || `${req.protocol}://${req.get("host")}`).replace(/\/+$/, "");
+}
 
-    if (
-      !/^\S+@\S+\.\S+$/.test(
-        email.trim()
-      )
-    ) {
-      return res.status(400).json({
-        error:
-          "Please provide a valid email address."
-      });
-    }
-
-    const application = [
-      "New Aihuishou agent application",
-      "",
-      `Full name: ${fullName.trim()}`,
-      `Phone: ${phone.trim()}`,
-      `Email: ${email.trim()}`,
-      `Business/Company: ${
-        company?.trim() ||
-        "Not provided"
-      }`,
-      `Location: ${location.trim()}`
-    ].join("\n");
-
-    try {
-      await transporter.sendMail({
-        from:
-          process.env.SMTP_FROM ||
-          process.env.SMTP_USER,
-        to: emailTo,
-        replyTo: email.trim(),
-        subject:
-          `Agent application: ${fullName.trim()}`,
-        text: application
-      });
-
-      return res.status(201).json({
-        message:
-          "Application received."
-      });
-    } catch (error) {
-      console.error(
-        "Agent application email failed:",
-        error.message
-      );
-
-      return res.status(500).json({
-        error:
-          "We could not send your application. Please try again later."
-      });
-    }
+async function sendApplicationNotification(application) {
+  try {
+    await transporter.sendMail({
+      from: process.env.SMTP_FROM || process.env.SMTP_USER,
+      to: emailTo,
+      replyTo: application.email,
+      subject: `New agent application: ${application.fullName}`,
+      text: [
+        "New Aihuishou agent application",
+        "",
+        `Name: ${application.fullName}`,
+        `Email: ${application.email}`,
+        `Phone: ${application.phone}`,
+        `Business name: ${application.businessName}`,
+        `Location: ${application.location}`
+      ].join("\n")
+    });
+  } catch (error) {
+    // The application is retained in the admin dashboard even when email is
+    // unavailable, so a temporary SMTP failure cannot lose an applicant.
+    console.error("Agent application notification failed:", error.message);
   }
-);
+}
+
+async function createAgentAccessInvite(req, application) {
+  const token = crypto.randomBytes(32).toString("hex");
+  const now = new Date();
+  const invite = {
+    id: crypto.randomUUID(),
+    applicationId: application.id,
+    email: application.email,
+    tokenHash: crypto.createHash("sha256").update(token).digest("hex"),
+    createdAt: now,
+    expiresAt: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)
+  };
+
+  await agentAccessInvitesCollection.deleteMany({ email: application.email });
+  await agentAccessInvitesCollection.insertOne(invite);
+
+  return `${publicBaseUrl(req)}/agent-login.html?invite=${encodeURIComponent(token)}&email=${encodeURIComponent(application.email)}`;
+}
+
+async function sendApprovedAgentEmail(application, accessUrl) {
+  await transporter.sendMail({
+    from: process.env.SMTP_FROM || process.env.SMTP_USER,
+    to: application.email,
+    subject: "Your Aihuishou agent application has been approved",
+    text: [
+      `Hello ${application.firstName},`,
+      "",
+      "We are pleased to let you know that your Aihuishou agent application has been approved.",
+      "Use the secure link below within seven days to set your password and access the Agent login screen:",
+      accessUrl,
+      "",
+      "If you did not apply, you can safely ignore this email.",
+      "",
+      "Aihuishou Electricals"
+    ].join("\n")
+  });
+}
+
+async function sendRejectedAgentEmail(application) {
+  await transporter.sendMail({
+    from: process.env.SMTP_FROM || process.env.SMTP_USER,
+    to: application.email,
+    subject: "Update on your Aihuishou agent application",
+    text: [
+      `Hello ${application.firstName},`,
+      "",
+      "Thank you for your interest in becoming an Aihuishou agent and for taking the time to apply.",
+      "At the moment, we are not recruiting agents in your region. We will keep your details on file and reach out if this changes.",
+      "",
+      "We appreciate your interest in working with us.",
+      "",
+      "Aihuishou Electricals"
+    ].join("\n")
+  });
+}
+
+app.post("/api/agent-applications", requestLimiter, async (req, res) => {
+  const firstName = applicationField(req.body?.firstName, 80);
+  const lastName = applicationField(req.body?.lastName, 80);
+  const phone = applicationField(req.body?.phone, 40);
+  const email = applicationEmail(req.body?.email);
+  const businessName = applicationField(req.body?.businessName, 160);
+  const location = applicationField(req.body?.location, 160);
+
+  if (!firstName || !lastName || !phone || !email || !businessName || !location) {
+    return res.status(400).json({
+      error: "First name, last name, email, phone number, business name and location are required."
+    });
+  }
+
+  try {
+    const [account, pendingApplication] = await Promise.all([
+      getAccountByEmail(email),
+      agentApplicationsCollection.findOne({ email, status: "Pending" })
+    ]);
+
+    if (account || pendingApplication) {
+      return res.status(409).json({
+        error: pendingApplication
+          ? "An application from this email is already awaiting review."
+          : "An agent account already exists for this email."
+      });
+    }
+
+    const application = {
+      id: crypto.randomUUID(),
+      firstName,
+      lastName,
+      fullName: `${firstName} ${lastName}`,
+      email,
+      phone,
+      businessName,
+      location,
+      status: "Pending",
+      createdAt: new Date().toISOString()
+    };
+
+    await agentApplicationsCollection.insertOne(application);
+    await sendApplicationNotification(application);
+
+    return res.status(201).json({
+      message: "Your application has been received. We will email you after the vetting process is complete."
+    });
+  } catch (error) {
+    console.error("Agent application creation failed:", error.message);
+    return res.status(500).json({ error: "Unable to submit your application. Please try again." });
+  }
+});
+
+app.post("/api/agent-invitation/confirm", authLimiter, async (req, res) => {
+  const email = applicationEmail(req.body?.email);
+  const token = typeof req.body?.token === "string" ? req.body.token : "";
+  const password = typeof req.body?.password === "string" ? req.body.password : "";
+
+  if (!email || !token || password.length < 8) {
+    return res.status(400).json({ error: "Use a valid access link and a password of at least 8 characters." });
+  }
+
+  try {
+    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+    const invite = await agentAccessInvitesCollection.findOne({
+      email,
+      tokenHash,
+      expiresAt: { $gt: new Date() }
+    });
+    if (!invite) return res.status(400).json({ error: "This account-access link is invalid or has expired." });
+
+    const salt = crypto.randomBytes(16).toString("hex");
+    const passwordHash = (await scrypt(password, salt, 64)).toString("hex");
+    const result = await accountsCollection.updateOne(
+      { email, role: "agent", accessStatus: "invited" },
+      { $set: { salt, passwordHash, accessStatus: "active", activatedAt: new Date().toISOString() } }
+    );
+    if (!result.matchedCount) return res.status(400).json({ error: "This account is no longer waiting for activation." });
+
+    await agentAccessInvitesCollection.deleteMany({ email });
+    await agentApplicationsCollection.updateOne(
+      { id: invite.applicationId },
+      { $set: { accessActivatedAt: new Date().toISOString() } }
+    );
+    const account = await getAccountByEmail(email);
+    createSession(res, account);
+    return res.json({
+      message: "Your password is set. Welcome to the agent portal.",
+      agent: { fullName: account.fullName, phone: account.phone, email: account.email }
+    });
+  } catch (error) {
+    console.error("Agent invitation confirmation failed:", error.message);
+    return res.status(500).json({ error: "Unable to activate your account right now." });
+  }
+});
 
 app.get(
   "/api/pickup-requests",
@@ -1466,29 +1442,9 @@ app.post(
     const requestedDate = typeof req.body?.requestedDate === "string"
       ? req.body.requestedDate.trim()
       : "";
-    const goods = req.body?.goods;
-    const hasSelectedGoodsAndQuantities =
-      Array.isArray(goods) &&
-      goods.length > 0 &&
-      goods.every(
-        (item) =>
-          item &&
-          typeof item.name === "string" &&
-          item.name.trim() &&
-          (typeof item.quantity === "string" || typeof item.quantity === "number") &&
-          String(item.quantity).trim() &&
-          Number.isSafeInteger(Number(item.quantity)) &&
-          Number(item.quantity) >= 1
-      );
 
     if (!isValidDateOnly(requestedDate)) {
       return res.status(400).json({ error: "Choose a valid pickup date." });
-    }
-
-    if (!hasSelectedGoodsAndQuantities) {
-      return res.status(400).json({
-        error: "Select goods from the list and enter a whole-number quantity before scheduling a pickup date."
-      });
     }
 
     try {
@@ -1510,7 +1466,6 @@ app.post(
         id: crypto.randomUUID(),
         agentEmail: req.agent.email,
         requestedDate,
-        goods: goods.map((item) => ({ name: item.name.trim(), quantity: Number(item.quantity) })),
         status: "Pending approval",
         active: true,
         createdAt: new Date().toISOString()
@@ -1717,6 +1672,172 @@ app.get(
   }
 );
 
+app.get("/api/admin/agent-applications", requireAdmin, async (req, res) => {
+  try {
+    const applications = await agentApplicationsCollection.find(
+      {},
+      { projection: { _id: 0 } }
+    ).sort({ createdAt: -1 }).toArray();
+    res.json({ applications });
+  } catch (error) {
+    console.error("Admin agent application lookup failed:", error.message);
+    res.status(500).json({ error: "Unable to load agent applications." });
+  }
+});
+
+app.post("/api/admin/agent-applications/:id/approve", requireAdmin, async (req, res) => {
+  try {
+    const application = withoutMongoId(await agentApplicationsCollection.findOne({ id: req.params.id }));
+    if (!application) return res.status(404).json({ error: "Application not found." });
+    if (application.status !== "Pending") {
+      return res.status(409).json({ error: "This application has already been reviewed." });
+    }
+
+    const existingAccount = await getAccountByEmail(application.email);
+    if (existingAccount) {
+      return res.status(409).json({ error: "An account already exists for this applicant." });
+    }
+
+    const now = new Date().toISOString();
+    const account = {
+      role: "agent",
+      accessStatus: "invited",
+      fullName: application.fullName,
+      phone: application.phone,
+      email: application.email,
+      company: application.businessName,
+      businessName: application.businessName,
+      location: application.location,
+      applicationId: application.id,
+      createdAt: now,
+      approvedAt: now
+    };
+
+    try {
+      await accountsCollection.insertOne(account);
+    } catch (error) {
+      if (error?.code === 11000) return res.status(409).json({ error: "An account already exists for this applicant." });
+      throw error;
+    }
+
+    let accessUrl;
+    try {
+      accessUrl = await createAgentAccessInvite(req, application);
+    } catch (error) {
+      await accountsCollection.deleteOne({ email: application.email, applicationId: application.id });
+      throw error;
+    }
+    let accessEmailStatus = "Sent";
+    let accessEmailError = "";
+    try {
+      await sendApprovedAgentEmail(application, accessUrl);
+    } catch (error) {
+      accessEmailStatus = "Failed";
+      accessEmailError = error.message;
+      console.error("Approved agent email failed:", error.message);
+    }
+
+    await agentApplicationsCollection.updateOne(
+      { id: application.id, status: "Pending" },
+      {
+        $set: {
+          status: "Approved",
+          reviewedAt: now,
+          reviewedBy: adminEmail,
+          accessEmailStatus,
+          accessEmailError,
+          accessEmailSentAt: accessEmailStatus === "Sent" ? now : ""
+        }
+      }
+    );
+
+    return res.json({
+      message: accessEmailStatus === "Sent"
+        ? "Application approved and account-access email sent."
+        : "Application approved, but the account-access email could not be sent. Use Resend access link after checking SMTP settings.",
+      emailSent: accessEmailStatus === "Sent"
+    });
+  } catch (error) {
+    console.error("Agent application approval failed:", error.message);
+    return res.status(500).json({ error: "Unable to approve this application." });
+  }
+});
+
+app.post("/api/admin/agent-applications/:id/resend-access", requireAdmin, async (req, res) => {
+  try {
+    const application = withoutMongoId(await agentApplicationsCollection.findOne({ id: req.params.id, status: "Approved" }));
+    if (!application) return res.status(404).json({ error: "Approved application not found." });
+    const account = await getAccountByEmail(application.email);
+    if (!account || account.role !== "agent") return res.status(409).json({ error: "This approved agent account is no longer available." });
+    if (account.accessStatus !== "invited") return res.status(409).json({ error: "This agent has already activated their account." });
+
+    const accessUrl = await createAgentAccessInvite(req, application);
+    try {
+      await sendApprovedAgentEmail(application, accessUrl);
+    } catch (error) {
+      await agentApplicationsCollection.updateOne(
+        { id: application.id },
+        { $set: { accessEmailStatus: "Failed", accessEmailError: error.message } }
+      );
+      console.error("Agent access email resend failed:", error.message);
+      return res.status(502).json({ error: "The account-access email could not be sent. Check SMTP settings and try again." });
+    }
+
+    await agentApplicationsCollection.updateOne(
+      { id: application.id },
+      { $set: { accessEmailStatus: "Sent", accessEmailError: "", accessEmailSentAt: new Date().toISOString() } }
+    );
+    return res.json({ message: "A new account-access link has been emailed to the approved agent." });
+  } catch (error) {
+    console.error("Agent access email resend failed:", error.message);
+    return res.status(500).json({ error: "Unable to resend the account-access email." });
+  }
+});
+
+app.post("/api/admin/agent-applications/:id/reject", requireAdmin, async (req, res) => {
+  try {
+    const application = withoutMongoId(await agentApplicationsCollection.findOne({ id: req.params.id }));
+    if (!application) return res.status(404).json({ error: "Application not found." });
+    if (application.status !== "Pending") {
+      return res.status(409).json({ error: "This application has already been reviewed." });
+    }
+
+    const now = new Date().toISOString();
+    let rejectionEmailStatus = "Sent";
+    let rejectionEmailError = "";
+    try {
+      await sendRejectedAgentEmail(application);
+    } catch (error) {
+      rejectionEmailStatus = "Failed";
+      rejectionEmailError = error.message;
+      console.error("Rejected agent email failed:", error.message);
+    }
+
+    await agentApplicationsCollection.updateOne(
+      { id: application.id, status: "Pending" },
+      {
+        $set: {
+          status: "Rejected",
+          reviewedAt: now,
+          reviewedBy: adminEmail,
+          rejectionEmailStatus,
+          rejectionEmailError,
+          rejectionEmailSentAt: rejectionEmailStatus === "Sent" ? now : ""
+        }
+      }
+    );
+    return res.json({
+      message: rejectionEmailStatus === "Sent"
+        ? "Application rejected and applicant email sent."
+        : "Application rejected, but the applicant email could not be sent.",
+      emailSent: rejectionEmailStatus === "Sent"
+    });
+  } catch (error) {
+    console.error("Agent application rejection failed:", error.message);
+    return res.status(500).json({ error: "Unable to reject this application." });
+  }
+});
+
 app.get("/api/admin/accounts", requireAdmin, async (req, res) => {
   try {
     const accounts = await accountsCollection.find(
@@ -1743,6 +1864,7 @@ app.delete("/api/admin/accounts/:email", requireAdmin, async (req, res) => {
     const result = await accountsCollection.deleteOne({ email });
     if (!result.deletedCount) return res.status(404).json({ error: "Account not found." });
     await passwordResetCollection.deleteMany({ email });
+    await agentAccessInvitesCollection.deleteMany({ email });
     res.status(204).end();
   } catch (error) {
     console.error("Account deletion failed:", error.message);

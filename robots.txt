@@ -4,6 +4,7 @@ Disallow: /api/
 Disallow: /admin-login.html
 Disallow: /admin-dashboard.html
 Disallow: /admin-analysis.html
+Disallow: /agent-application.html
+Disallow: /agent-login.html
 Disallow: /agent-dashboard.html
 Disallow: /field-employee-dashboard.html
-
