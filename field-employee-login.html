@@ -17,8 +17,12 @@
       input { width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: #f8fcff; color: var(--ink); font: inherit; }
       input:focus { outline: 0; border-color: var(--orange); box-shadow: 0 0 0 3px rgba(35,103,255,.12); }
       .password-field { position: relative; }
-      .password-field input { padding-right: 76px; }
-      .password-toggle { position: absolute; top: 50%; right: 8px; transform: translateY(-50%); border: 0; border-radius: 6px; padding: 6px 8px; background: transparent; color: var(--orange); font: 700 12px inherit; cursor: pointer; }
+      .password-field input { padding-right: 52px; }
+      .password-toggle { position: absolute; top: 50%; right: 6px; display: grid; width: 36px; height: 36px; padding: 0; place-items: center; transform: translateY(-50%); border: 0; border-radius: 6px; background: transparent; color: var(--orange); cursor: pointer; }
+      .password-toggle:hover { background: rgba(35,103,255,.08); }
+      .password-toggle:focus-visible { outline: 2px solid var(--orange); outline-offset: 1px; }
+      .password-toggle svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 2; }
+      .password-toggle .eye-slash { display: none; }.password-toggle.is-visible .eye-slash { display: block; }
       .honeypot { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
       .btn { display: inline-flex; align-items: center; justify-content: center; margin-top: 22px; padding: 12px 17px; border: 0; border-radius: 8px; background: var(--orange); color: #fff; font: 700 14px inherit; cursor: pointer; }
       .status { min-height: 22px; margin-top: 14px; color: var(--muted); font-size: 13px; }
@@ -37,7 +41,7 @@
         <p class="muted">Sign in to report collected goods to the operations team.</p>
         <form id="fieldLoginForm">
           <label for="fieldEmail">Email address</label><input id="fieldEmail" name="email" type="email" autocomplete="username" required />
-          <label for="fieldPassword">Password</label><div class="password-field"><input id="fieldPassword" name="password" type="password" autocomplete="current-password" required /><button class="password-toggle" type="button" aria-controls="fieldPassword" aria-pressed="false">Show</button></div>
+          <label for="fieldPassword">Password</label><div class="password-field"><input id="fieldPassword" name="password" type="password" autocomplete="current-password" required /><button class="password-toggle" type="button" aria-controls="fieldPassword" aria-label="Show password" aria-pressed="false"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.5"/><path class="eye-slash" d="M3 3 21 21"/></svg></button></div>
           <button class="btn" type="submit">Open field dashboard</button>
           <p class="auth-switch"><a href="password-reset.html">Forgot your password?</a></p>
           <p class="status" id="fieldStatus" role="status" aria-live="polite"></p>
@@ -47,7 +51,7 @@
           <label for="signupName">Full name</label><input id="signupName" name="fullName" required />
           <label for="signupPhone">Phone number</label><input id="signupPhone" name="phone" inputmode="tel" required />
           <label for="signupEmail">Email address</label><input id="signupEmail" name="email" type="email" autocomplete="email" required />
-          <label for="signupPassword">Create password</label><div class="password-field"><input id="signupPassword" name="password" type="password" minlength="8" maxlength="256" autocomplete="new-password" required /><button class="password-toggle" type="button" aria-controls="signupPassword" aria-pressed="false">Show</button></div>
+          <label for="signupPassword">Create password</label><div class="password-field"><input id="signupPassword" name="password" type="password" minlength="8" maxlength="256" autocomplete="new-password" required /><button class="password-toggle" type="button" aria-controls="signupPassword" aria-label="Show password" aria-pressed="false"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.5"/><path class="eye-slash" d="M3 3 21 21"/></svg></button></div>
           <div class="honeypot" aria-hidden="true"><label>Leave this field empty<input name="website" type="text" tabindex="-1" autocomplete="off" /></label></div>
           <button class="btn" type="submit">Create field employee account</button>
           <p class="status" id="signupStatus" role="status" aria-live="polite"></p>
@@ -59,7 +63,7 @@
       const loginForm = document.getElementById('fieldLoginForm');
       const signupForm = document.getElementById('fieldSignupForm');
       const signupPrompt = document.getElementById('signupPrompt');
-      document.querySelectorAll('.password-toggle').forEach((button) => button.addEventListener('click', () => { const input = document.getElementById(button.getAttribute('aria-controls')); const visible = input.type === 'text'; input.type = visible ? 'password' : 'text'; button.textContent = visible ? 'Show' : 'Hide'; button.setAttribute('aria-pressed', String(!visible)); }));
+      document.querySelectorAll('.password-toggle').forEach((button) => button.addEventListener('click', () => { const input = document.getElementById(button.getAttribute('aria-controls')); const visible = input.type === 'text'; input.type = visible ? 'password' : 'text'; button.classList.toggle('is-visible', !visible); button.setAttribute('aria-label', visible ? 'Show password' : 'Hide password'); button.setAttribute('aria-pressed', String(!visible)); }));
       signupPrompt.querySelector('button').addEventListener('click', () => { loginForm.classList.add('is-hidden'); signupPrompt.classList.add('is-hidden'); signupForm.classList.remove('is-hidden'); });
       document.getElementById('loginPrompt').addEventListener('click', () => { signupForm.classList.add('is-hidden'); loginForm.classList.remove('is-hidden'); signupPrompt.classList.remove('is-hidden'); });
       loginForm.addEventListener('submit', async (event) => {

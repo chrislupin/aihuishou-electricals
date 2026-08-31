@@ -17,8 +17,12 @@
       input { width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: #f8fcff; color: var(--ink); font: inherit; }
       input:focus { outline: 0; border-color: var(--orange); box-shadow: 0 0 0 3px rgba(35,103,255,.12); }
       .password-field { position: relative; }
-      .password-field input { padding-right: 76px; }
-      .password-toggle { position: absolute; top: 50%; right: 8px; transform: translateY(-50%); border: 0; border-radius: 6px; padding: 6px 8px; background: transparent; color: var(--orange); font: 700 12px inherit; cursor: pointer; }
+      .password-field input { padding-right: 52px; }
+      .password-toggle { position: absolute; top: 50%; right: 6px; display: grid; width: 36px; height: 36px; padding: 0; place-items: center; transform: translateY(-50%); border: 0; border-radius: 6px; background: transparent; color: var(--orange); cursor: pointer; }
+      .password-toggle:hover { background: rgba(35,103,255,.08); }
+      .password-toggle:focus-visible { outline: 2px solid var(--orange); outline-offset: 1px; }
+      .password-toggle svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 2; }
+      .password-toggle .eye-slash { display: none; }.password-toggle.is-visible .eye-slash { display: block; }
       .btn { display: inline-flex; align-items: center; justify-content: center; margin-top: 22px; padding: 12px 17px; border: 0; border-radius: 8px; background: var(--orange); color: #fff; font: 700 14px inherit; cursor: pointer; }
       .status { min-height: 22px; margin-top: 14px; color: var(--muted); font-size: 13px; }
       .status.error { color: #b42318; }
@@ -35,7 +39,7 @@
           <label for="adminEmail">Admin email</label>
           <input id="adminEmail" name="email" type="email" autocomplete="username" required />
           <label for="adminPassword">Admin password</label>
-          <div class="password-field"><input id="adminPassword" name="password" type="password" autocomplete="current-password" required /><button class="password-toggle" type="button" aria-controls="adminPassword" aria-pressed="false">Show</button></div>
+          <div class="password-field"><input id="adminPassword" name="password" type="password" autocomplete="current-password" required /><button class="password-toggle" type="button" aria-controls="adminPassword" aria-label="Show password" aria-pressed="false"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.5"/><path class="eye-slash" d="M3 3 21 21"/></svg></button></div>
           <button class="btn" type="submit">Open request inbox</button>
           <p class="muted"><a href="password-reset.html">Forgot your password?</a></p>
           <p class="status" id="adminStatus" role="status" aria-live="polite"></p>
@@ -43,7 +47,7 @@
       </section>
     </main>
     <script>
-      document.querySelector('.password-toggle').addEventListener('click', (event) => { const button = event.currentTarget; const input = document.getElementById(button.getAttribute('aria-controls')); const visible = input.type === 'text'; input.type = visible ? 'password' : 'text'; button.textContent = visible ? 'Show' : 'Hide'; button.setAttribute('aria-pressed', String(!visible)); });
+      document.querySelector('.password-toggle').addEventListener('click', (event) => { const button = event.currentTarget; const input = document.getElementById(button.getAttribute('aria-controls')); const visible = input.type === 'text'; input.type = visible ? 'password' : 'text'; button.classList.toggle('is-visible', !visible); button.setAttribute('aria-label', visible ? 'Show password' : 'Hide password'); button.setAttribute('aria-pressed', String(!visible)); });
       document.getElementById('adminLoginForm').addEventListener('submit', async (event) => {
         event.preventDefault();
         const form = event.currentTarget;
