@@ -30,7 +30,7 @@
       input { width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: #f8fcff; color: var(--ink); font: inherit; }
       input:focus { outline: 0; border-color: var(--orange); box-shadow: 0 0 0 3px rgba(35,103,255,.12); }
       .password-field { position: relative; }
-      .password-field input { padding-right: 52px; }
+      .password-field input { box-sizing: border-box; padding-right: 52px; }
       .password-toggle { position: absolute; top: 50%; right: 6px; display: grid; width: 36px; height: 36px; padding: 0; place-items: center; transform: translateY(-50%); border: 0; border-radius: 6px; background: transparent; color: var(--orange); cursor: pointer; }
       .password-toggle:hover { background: rgba(35,103,255,.08); }
       .password-toggle:focus-visible { outline: 2px solid var(--orange); outline-offset: 1px; }
