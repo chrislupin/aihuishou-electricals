@@ -2,7 +2,7 @@
 
 A website and Node.js backend for Aihuishou Electricals Limited.
 
-See [DEPLOYMENT.md](DEPLOYMENT.md) for the production deployment checklist.
+Deploy this project on Vercel. See [DEPLOYMENT.md](DEPLOYMENT.md) for the production deployment checklist.
 
 ## Run locally
 

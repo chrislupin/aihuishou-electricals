@@ -1,5 +1,5 @@
 {
   "version": 2,
-  "builds": [{ "src": "server.js", "use": "@vercel/node", "config": { "includeFiles": ["*.html", "styles.css", "script.js", "images/**", "data/**"] } }],
+  "builds": [{ "src": "server.js", "use": "@vercel/node", "config": { "includeFiles": ["*.html", "styles.css", "script.js", "images/**"] } }],
   "routes": [{ "src": "/(.*)", "dest": "/server.js" }]
 }
