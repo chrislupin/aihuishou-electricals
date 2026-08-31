@@ -392,7 +392,9 @@
           const accountData = await accountResponse.json();
           if (!requestResponse.ok) throw new Error(requestData.error || 'Unable to load pickup requests.');
           if (!accountResponse.ok) throw new Error(accountData.error || 'Unable to load employee accounts.');
-          requests = requestData.requests || [];
+          // Pickup requests are scheduled and approved in their own workflow.
+          // Analysis reports only ticket goods and values.
+          requests = (requestData.requests || []).filter((request) => request.requestType === 'fieldEmployee' || request.requestType === 'agentTicket');
           accounts = accountData.accounts || [];
           populatePeople();
           render();

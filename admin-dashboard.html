@@ -96,7 +96,6 @@
       };
       let requests = [];
       let accounts = [];
-      let dateApprovals = [];
       let applications = [];
 
       $('#title').textContent = titles[viewName] || titles.overview;
@@ -129,19 +128,40 @@
         container.replaceChildren(empty);
       }
 
+      function addRequestDetail(details, label, value, className = '') {
+        const item = document.createElement('div');
+        const heading = document.createElement('strong');
+        const content = document.createElement('span');
+        heading.textContent = label;
+        content.textContent = value || '—';
+        if (className) content.className = className;
+        item.append(heading, content);
+        details.append(item);
+      }
+
       function requestCard(request) {
         const agent = request.agent || {};
+        const pickup = isPickupRequest(request);
         const card = document.createElement('article');
         card.className = 'card';
-        card.innerHTML = '<div class="request-top"><div><h3></h3><p class="muted"></p></div><span class="badge"></span></div><div class="details"><div><strong>Employee / agent</strong><span class="name"></span></div><div><strong>Goods and number</strong><span class="goods"></span></div><div><strong>Combined total amount</strong><span class="request-total"></span></div><div><strong>Pickup date</strong><span class="time"></span></div><div><strong>Location / notes</strong><span class="notes"></span></div></div><div class="actions"></div>';
-        card.querySelector('h3').textContent = requestName(request);
-        card.querySelector('.muted').textContent = formatDate(request.createdAt);
-        card.querySelector('.badge').textContent = request.status || 'Pending approval';
-        card.querySelector('.name').textContent = agent.fullName || request.agentEmail || '—';
-        card.querySelector('.goods').textContent = (request.goods || []).map((good) => `${good.name}: ${good.quantity}`).join(', ') || '—';
-        card.querySelector('.request-total').textContent = formatAmount(requestTotal(request));
-        card.querySelector('.time').textContent = formatPickupDate(request.preferredDate || request.preferredTime);
-        card.querySelector('.notes').textContent = [request.location, request.notes].filter(Boolean).join(' · ') || '—';
+        const top = document.createElement('div'); top.className = 'request-top';
+        const titleBlock = document.createElement('div');
+        const title = document.createElement('h3'); title.textContent = requestName(request);
+        const created = document.createElement('p'); created.className = 'muted'; created.textContent = formatDate(request.createdAt);
+        titleBlock.append(title, created);
+        const badge = document.createElement('span'); badge.className = 'badge'; badge.textContent = request.status || 'Pending approval';
+        top.append(titleBlock, badge);
+        const details = document.createElement('div'); details.className = 'details';
+        addRequestDetail(details, 'Employee / agent', agent.fullName || request.agentEmail || '—');
+        addRequestDetail(details, 'Goods and number', (request.goods || []).map((good) => `${good.name}: ${good.quantity}`).join(', ') || '—');
+        if (pickup) {
+          addRequestDetail(details, 'Requested pickup date', formatPickupDate(request.preferredDate || request.preferredTime));
+          addRequestDetail(details, 'Location / notes', [request.location, request.notes].filter(Boolean).join(' · ') || '—');
+        } else {
+          addRequestDetail(details, 'Combined total amount', formatAmount(requestTotal(request)), 'request-total');
+          addRequestDetail(details, 'Notes', request.notes || '—');
+        }
+        const actions = document.createElement('div'); actions.className = 'actions';
 
         if (request.status !== 'Approved') {
           const approve = document.createElement('button');
@@ -159,9 +179,10 @@
             }
             load();
           });
-          card.querySelector('.actions').append(approve);
+          actions.append(approve);
         }
 
+        card.append(top, details, actions);
         return card;
       }
 
@@ -205,112 +226,35 @@
         target.replaceChildren(table);
       }
 
-      async function reviewPickupDate(id, action) {
-        if (action === 'reject' && !confirm('Reject this pickup date? The agent will be able to request a new date.')) return;
-        try {
-          const response = await fetch(`/api/admin/pickup-date-requests/${encodeURIComponent(id)}/${action}`, { method: 'POST' });
-          if (!response.ok) {
-            const result = await response.json().catch(() => ({}));
-            alert(result.error || `Unable to ${action} this pickup date.`);
-            return;
-          }
-          load();
-        } catch (error) {
-          alert(error.message || `Unable to ${action} this pickup date.`);
-        }
-      }
-
       function renderDateApprovals() {
-        root.innerHTML = '<p class="muted date-approval-intro">Review an agent\'s requested next pickup date. The goods total is calculated from tickets created since that agent\'s last approved pickup.</p><section class="filters"><label>Status <select id="dateApprovalStatus"><option value="Pending approval">Pending approval</option><option value="all">All statuses</option><option value="Approved">Approved</option><option value="Rejected">Rejected</option></select></label></section><div id="dateApprovals"></div>';
+        root.innerHTML = '<p class="muted date-approval-intro">Review pickup requests independently. Each request shows only the goods, location, notes and date included in that pickup request.</p><section class="filters"><label>Status <select id="dateApprovalStatus"><option value="Pending approval">Pending approval</option><option value="all">All statuses</option><option value="Approved">Approved</option></select></label></section><div id="dateApprovals"></div>';
         const statusSelect = $('#dateApprovalStatus');
         const target = $('#dateApprovals');
         const draw = () => {
-          const selected = dateApprovals.filter((request) => statusSelect.value === 'all' || request.status === statusSelect.value);
+          const selected = requests.filter((request) => isPickupRequest(request) && (statusSelect.value === 'all' || request.status === statusSelect.value));
           if (!selected.length) {
-            showEmpty(target, statusSelect.value === 'Pending approval' ? 'No pickup dates are waiting for approval.' : 'No pickup date approvals match this filter.');
+            showEmpty(target, statusSelect.value === 'Pending approval' ? 'No pickup requests are waiting for approval.' : 'No pickup requests match this filter.');
             return;
           }
-          const wrap = document.createElement('div');
-          wrap.className = 'date-approval-wrap';
-          const table = document.createElement('table');
-          table.className = 'date-approval-table';
-          table.innerHTML = '<thead><tr><th>Agent</th><th>Next pickup date</th><th>Goods total since last pickup</th><th>Last approved pickup</th><th>Requested</th><th>Status</th><th>Action</th></tr></thead>';
-          const body = document.createElement('tbody');
-          selected.forEach((request) => {
-            const row = document.createElement('tr');
-            const agentCell = document.createElement('td');
-            const agentName = document.createElement('span');
-            agentName.className = 'person';
-            agentName.textContent = request.agent?.fullName || request.agentEmail || 'Unknown agent';
-            const agentMeta = document.createElement('span');
-            agentMeta.className = 'muted';
-            agentMeta.textContent = request.agent?.email || request.agentEmail || '';
-            agentCell.append(agentName, agentMeta);
-            row.append(agentCell);
-            const dateCell = document.createElement('td');
-            dateCell.textContent = formatPickupDate(request.requestedDate);
-            row.append(dateCell);
-            const amountCell = document.createElement('td');
-            amountCell.className = 'amount';
-            amountCell.textContent = `KSh ${formatAmount(request.totalAmountSinceLastPickup)} · ${Number(request.totalQuantitySinceLastPickup || 0).toLocaleString('en-KE')} goods`;
-            row.append(amountCell);
-            const lastPickupCell = document.createElement('td');
-            lastPickupCell.textContent = request.lastPickupDate ? formatPickupDate(request.lastPickupDate) : (request.lastPickupAt ? formatDate(request.lastPickupAt) : 'No previous approved pickup');
-            row.append(lastPickupCell);
-            const submittedCell = document.createElement('td');
-            submittedCell.textContent = formatDate(request.createdAt);
-            row.append(submittedCell);
-            const badgeCell = document.createElement('td');
-            const badge = document.createElement('span');
-            badge.className = `badge${request.status === 'Approved' ? ' approved' : request.status === 'Rejected' ? ' rejected' : ''}`;
-            badge.textContent = request.status || 'Pending approval';
-            badgeCell.append(badge);
-            row.append(badgeCell);
-            const actionCell = document.createElement('td');
-            const actions = document.createElement('div');
-            actions.className = 'approval-actions';
-            if (request.status === 'Pending approval') {
-              const approve = document.createElement('button');
-              approve.className = 'btn';
-              approve.type = 'button';
-              approve.textContent = 'Approve';
-              approve.addEventListener('click', () => reviewPickupDate(request.id, 'approve'));
-              actions.append(approve);
-            }
-            if (request.status === 'Pending approval' || request.status === 'Approved') {
-              const reject = document.createElement('button');
-              reject.className = 'btn danger';
-              reject.type = 'button';
-              reject.textContent = request.status === 'Approved' ? 'Reject / unlock' : 'Reject';
-              reject.addEventListener('click', () => reviewPickupDate(request.id, 'reject'));
-              actions.append(reject);
-            }
-            if (!actions.children.length) actions.textContent = '—';
-            actionCell.append(actions);
-            row.append(actionCell);
-            body.append(row);
-          });
-          table.append(body);
-          wrap.append(table);
-          target.replaceChildren(wrap);
+          listRequests(target, selected, 'No pickup requests match this filter.');
         };
         statusSelect.addEventListener('change', draw);
         draw();
       }
 
       function renderFiltersAndRequests() {
-        root.innerHTML = '<section class="filters"><label>Person <select id="person"><option value="">All employees and agents</option></select></label><label>Status <select id="status"><option value="all">All statuses</option><option value="Pending approval">Pending approval</option><option value="Approved">Approved</option></select></label></section>' + (viewName === 'overview' ? '<h2>Selected collection summary</h2><div id="summary"></div><h2>Unapproved pickup requests</h2><div id="pickups"></div><h2>Unapproved agent tickets</h2><div id="agents"></div><h2>Unapproved field employee tickets</h2><div id="fields"></div>' : '<p class="muted">Only approved items are displayed on this page.</p><div id="results"></div>');
+        root.innerHTML = '<section class="filters"><label>Person <select id="person"><option value="">All employees and agents</option></select></label><label>Status <select id="status"><option value="all">All statuses</option><option value="Pending approval">Pending approval</option><option value="Approved">Approved</option></select></label></section>' + (viewName === 'overview' ? '<h2>Selected ticket summary</h2><div id="summary"></div><h2>Unapproved agent tickets</h2><div id="agents"></div><h2>Unapproved field employee tickets</h2><div id="fields"></div>' : '<p class="muted">Only approved items are displayed on this page.</p><div id="results"></div>');
         const personSelect = $('#person');
         accounts.forEach((account) => personSelect.add(new Option(`${account.fullName} — ${account.role === 'fieldEmployee' ? 'Field employee' : 'Agent'}`, account.email)));
         const statusSelect = $('#status');
         const draw = () => {
           let selected = requests.filter((request) => (!personSelect.value || request.agentEmail === personSelect.value) && (statusSelect.value === 'all' || request.status === statusSelect.value));
           if (viewName === 'overview') {
-            renderSummary(selected);
-            selected = selected.filter((request) => request.status !== 'Approved');
-            listRequests($('#pickups'), selected.filter(isPickupRequest), 'No unapproved pickup requests match these filters.');
-            listRequests($('#agents'), selected.filter(isAgentTicket), 'No unapproved agent tickets match these filters.');
-            listRequests($('#fields'), selected.filter(isField), 'No unapproved field employee requests match these filters.');
+            const tickets = selected.filter((request) => !isPickupRequest(request));
+            renderSummary(tickets);
+            const pendingTickets = tickets.filter((request) => request.status !== 'Approved');
+            listRequests($('#agents'), pendingTickets.filter(isAgentTicket), 'No unapproved agent tickets match these filters.');
+            listRequests($('#fields'), pendingTickets.filter(isField), 'No unapproved field employee tickets match these filters.');
           } else {
             listRequests($('#results'), selected, 'No requests match these filters.');
           }
@@ -448,22 +392,19 @@
       async function load() {
         root.replaceChildren();
         try {
-          const [requestResponse, accountResponse, dateApprovalResponse, applicationResponse] = await Promise.all([fetch('/api/admin/pickup-requests'), fetch('/api/admin/accounts'), fetch('/api/admin/pickup-date-requests'), fetch('/api/admin/agent-applications')]);
-          if (requestResponse.status === 401 || accountResponse.status === 401 || dateApprovalResponse.status === 401 || applicationResponse.status === 401) {
+          const [requestResponse, accountResponse, applicationResponse] = await Promise.all([fetch('/api/admin/pickup-requests'), fetch('/api/admin/accounts'), fetch('/api/admin/agent-applications')]);
+          if (requestResponse.status === 401 || accountResponse.status === 401 || applicationResponse.status === 401) {
             location.assign('admin-login.html');
             return;
           }
           const requestData = await requestResponse.json();
           const accountData = await accountResponse.json();
-          const dateApprovalData = await dateApprovalResponse.json();
           const applicationData = await applicationResponse.json();
           if (!requestResponse.ok) throw new Error(requestData.error || 'Unable to load pickup requests.');
           if (!accountResponse.ok) throw new Error(accountData.error || 'Unable to load accounts.');
-          if (!dateApprovalResponse.ok) throw new Error(dateApprovalData.error || 'Unable to load pickup date approvals.');
           if (!applicationResponse.ok) throw new Error(applicationData.error || 'Unable to load agent applications.');
           requests = requestData.requests || [];
           accounts = accountData.accounts || [];
-          dateApprovals = dateApprovalData.requests || [];
           applications = applicationData.applications || [];
           if (viewName === 'approved-pickups') requests = requests.filter((request) => isPickupRequest(request) && request.status === 'Approved');
           if (viewName === 'approved-agents') requests = requests.filter((request) => isAgentTicket(request) && request.status === 'Approved');
