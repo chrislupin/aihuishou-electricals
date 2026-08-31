@@ -597,7 +597,7 @@ async function requirePickupUser(req, res, next) {
       return requireFieldEmployee(req, res, next);
     }
 
-    if (requestedType === "agent") {
+    if (requestedType === "agent" || requestedType === "agentPickup" || requestedType === "agentTicket") {
       return requireAgent(req, res, next);
     }
 
@@ -1365,14 +1365,22 @@ app.get(
       const requests =
         await readPickupRequests();
 
+      const requestedType = typeof req.query?.requestType === "string" ? req.query.requestType : "";
+      const requestTypeMatches = (request) => {
+        const type = request.requestType || "agent";
+        if (req.requestUserType === "fieldEmployee") return type === "fieldEmployee";
+        if (requestedType === "agentPickup") return type === "agentPickup" || type === "agent";
+        if (requestedType === "agentTicket") return type === "agentTicket";
+        return type === "agent" || type === "agentPickup" || type === "agentTicket";
+      };
+
       const agentRequests =
         requests
           .filter(
             (request) =>
               request.agentEmail ===
               req.agent.email &&
-              (request.requestType || "agent") ===
-              req.requestUserType
+              requestTypeMatches(request)
           )
           .sort(
             (first, second) =>
@@ -1890,6 +1898,8 @@ app.post(
       ? requestType.trim()
       : (req.requestUserType || "agent");
     const isFieldEmployee = submittedRequestType === "fieldEmployee";
+    const isAgentPickup = submittedRequestType === "agentPickup" || submittedRequestType === "agent";
+    const isAgentTicket = submittedRequestType === "agentTicket";
 
     const validGoods =
       Array.isArray(goods) &&
@@ -1911,19 +1921,28 @@ app.post(
           ).trim() &&
           Number.isSafeInteger(Number(item.quantity)) &&
           Number(item.quantity) >= 1 &&
-          (typeof item.amount === "number" || typeof item.amount === "string") &&
-          String(item.amount).trim() &&
-          Number.isFinite(Number(item.amount)) &&
-          Number(item.amount) >= 0
+          (
+            isAgentPickup ||
+            (
+              (typeof item.amount === "number" || typeof item.amount === "string") &&
+              String(item.amount).trim() &&
+              Number.isFinite(Number(item.amount)) &&
+              Number(item.amount) >= 0
+            )
+          )
       );
 
-    const fields = isFieldEmployee ? [] : [location];
+    const fields = isAgentPickup ? [location] : [];
 
     const missingFields = fields.some(
       (value) => typeof value !== "string" || !value.trim()
     );
 
-    if (submittedRequestType !== req.requestUserType) {
+    if (
+      (isFieldEmployee && req.requestUserType !== "fieldEmployee") ||
+      ((isAgentPickup || isAgentTicket) && req.requestUserType !== "agent") ||
+      (!isFieldEmployee && !isAgentPickup && !isAgentTicket)
+    ) {
       return res.status(400).json({
         error: "This dashboard session cannot submit that request type. Refresh and sign in again."
       });
@@ -1931,7 +1950,9 @@ app.post(
 
     if (!validGoods) {
       return res.status(400).json({
-        error: "Add at least one good with a category, whole-number quantity, and valid amount per item."
+        error: isAgentPickup
+          ? "Add at least one good with a category and whole-number quantity."
+          : "Add at least one good with a category, whole-number quantity, and valid amount per item."
       });
     }
 
@@ -1944,51 +1965,39 @@ app.post(
     // `preferredTime` is accepted but ignored for one release so older cached
     // dashboards can still create tickets while clients migrate to dates.
     const cleanPreferredDate = typeof preferredDate === "string" ? preferredDate.trim() : "";
+    if (submittedRequestType === "agentPickup" && !cleanPreferredDate) {
+      return res.status(400).json({ error: "Choose a pickup date." });
+    }
     if (cleanPreferredDate && !isValidDateOnly(cleanPreferredDate)) {
       return res.status(400).json({ error: "Choose a valid pickup date." });
-    }
-    if (!isFieldEmployee && cleanPreferredDate) {
-      const activeDateApproval = await pickupDateRequestsCollection.findOne({
-        agentEmail: req.agent.email,
-        active: true,
-        status: { $in: ACTIVE_PICKUP_DATE_STATUSES }
-      });
-      if (!activeDateApproval) {
-        return res.status(409).json({ error: "Check pickup-date availability before creating a ticket with a date." });
-      }
-      if (activeDateApproval.requestedDate !== cleanPreferredDate) {
-        return res.status(409).json({ error: "Your selected date is locked while another date is pending or approved." });
-      }
     }
     const cleanedGoods =
       goods.map((item) => ({
         name: item.name.trim(),
         quantity:
           Number(item.quantity),
-        amount: Number(item.amount),
-        totalAmount: Number(item.amount) * Number(item.quantity)
+        amount: isAgentPickup ? 0 : Number(item.amount),
+        totalAmount: isAgentPickup ? 0 : Number(item.amount) * Number(item.quantity)
       }));
 
     const goodsText =
       cleanedGoods
         .map(
           (item) =>
-            `${item.name}: ${item.quantity} @ ${item.amount} = ${item.totalAmount}`
+            isAgentPickup
+              ? `${item.name}: ${item.quantity}`
+              : `${item.name}: ${item.quantity} @ ${item.amount} = ${item.totalAmount}`
         )
         .join(", ");
 
     const pickupRequest = [
-      `New ${isFieldEmployee ? "field employee" : "agent"} ticket`,
+      `New ${isFieldEmployee ? "field employee ticket" : isAgentPickup ? "pickup request" : "agent ticket"}`,
       "",
       `${isFieldEmployee ? "Field employee" : "Agent"}: ${req.agent.fullName}`,
       `Phone: ${req.agent.phone}`,
       `Goods: ${goodsText}`,
       `Preferred pickup date: ${cleanPreferredDate || "Not provided"}`,
-      `Pickup location: ${
-        isFieldEmployee
-          ? "Not provided (field employee)"
-          : location.trim()
-      }`,
+      `Pickup location: ${isAgentPickup ? location.trim() : "Not provided"}`,
       `Collection notes: ${
         typeof notes === "string" &&
         notes.trim()
@@ -2005,10 +2014,7 @@ app.post(
       goods: cleanedGoods,
       totalAmount: calculateRequestTotal(cleanedGoods),
       preferredDate: cleanPreferredDate,
-      location:
-        isFieldEmployee
-          ? ""
-          : location.trim(),
+      location: isAgentPickup ? location.trim() : "",
       notes:
         typeof notes === "string"
           ? notes.trim()
@@ -2046,7 +2052,9 @@ app.post(
         subject: `${
           isFieldEmployee
             ? "Field ticket"
-            : "Pickup ticket"
+            : isAgentPickup
+              ? "Pickup request"
+              : "Agent ticket"
         }: ${cleanedGoods
           .map(
             (item) => item.name
@@ -2072,7 +2080,9 @@ app.post(
 
     return res.status(201).json({
       message:
-        "Ticket created and sent for admin approval.",
+        isAgentPickup
+          ? "Pickup request created and sent for admin approval."
+          : "Ticket created and sent for admin approval.",
       emailSent,
       request:
         responseRequest

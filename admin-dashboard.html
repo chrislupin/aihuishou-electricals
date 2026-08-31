@@ -63,6 +63,7 @@
           <a data-view="overview" href="admin-dashboard.html">Overview &amp; unapproved</a>
           <a data-view="applications" href="admin-dashboard.html?view=applications">Agent applications</a>
           <a data-view="pickup-dates" href="admin-dashboard.html?view=pickup-dates">Pickup dates approval</a>
+          <a data-view="approved-pickups" href="admin-dashboard.html?view=approved-pickups">Approved pickup requests</a>
           <a data-view="approved-agents" href="admin-dashboard.html?view=approved-agents">Approved agent tickets</a>
           <a data-view="approved-fields" href="admin-dashboard.html?view=approved-fields">Approved field employee tickets</a>
           <a data-view="accounts" href="admin-dashboard.html?view=accounts">Manage employees and agents</a>
@@ -85,9 +86,10 @@
       const viewName = new URLSearchParams(location.search).get('view') || 'overview';
       const root = $('#view');
       const titles = {
-        overview: 'Ticket inbox',
+        overview: 'Requests & tickets inbox',
         applications: 'Agent applications',
         'pickup-dates': 'Pickup dates approval',
+        'approved-pickups': 'Approved pickup requests',
         'approved-agents': 'Approved agent tickets',
         'approved-fields': 'Approved field employee tickets',
         accounts: 'Manage employees and agents'
@@ -101,7 +103,10 @@
       document.querySelector(`[data-view="${viewName}"]`)?.classList.add('active');
 
       const isField = (request) => request.requestType === 'fieldEmployee';
+      const isAgentTicket = (request) => request.requestType === 'agentTicket';
+      const isPickupRequest = (request) => !isField(request) && !isAgentTicket(request);
       const roleName = (request) => isField(request) ? 'Field employee' : 'Agent';
+      const requestName = (request) => isField(request) ? 'Field employee ticket' : isAgentTicket(request) ? 'Agent ticket' : 'Pickup request';
       const formatDate = (value) => new Intl.DateTimeFormat('en-KE', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
       const formatPickupDate = (value) => { if (!value) return 'Flexible / not provided'; const date = new Date(`${value}T00:00:00`); return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(date.getTime()) ? new Intl.DateTimeFormat('en-KE', { dateStyle: 'medium' }).format(date) : value; };
       const formatAmount = (amount) => Number(amount || 0).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -129,7 +134,7 @@
         const card = document.createElement('article');
         card.className = 'card';
         card.innerHTML = '<div class="request-top"><div><h3></h3><p class="muted"></p></div><span class="badge"></span></div><div class="details"><div><strong>Employee / agent</strong><span class="name"></span></div><div><strong>Goods and number</strong><span class="goods"></span></div><div><strong>Combined total amount</strong><span class="request-total"></span></div><div><strong>Pickup date</strong><span class="time"></span></div><div><strong>Location / notes</strong><span class="notes"></span></div></div><div class="actions"></div>';
-        card.querySelector('h3').textContent = `${roleName(request)} ticket`;
+        card.querySelector('h3').textContent = requestName(request);
         card.querySelector('.muted').textContent = formatDate(request.createdAt);
         card.querySelector('.badge').textContent = request.status || 'Pending approval';
         card.querySelector('.name').textContent = agent.fullName || request.agentEmail || '—';
@@ -142,7 +147,7 @@
           const approve = document.createElement('button');
           approve.className = 'btn';
           approve.type = 'button';
-          approve.textContent = 'Approve ticket';
+          approve.textContent = `Approve ${requestName(request).toLowerCase()}`;
           approve.addEventListener('click', async () => {
             approve.disabled = true;
             const response = await fetch(`/api/admin/pickup-requests/${encodeURIComponent(request.id)}/approve`, { method: 'POST' });
@@ -294,7 +299,7 @@
       }
 
       function renderFiltersAndRequests() {
-        root.innerHTML = '<section class="filters"><label>Person <select id="person"><option value="">All employees and agents</option></select></label><label>Status <select id="status"><option value="all">All statuses</option><option value="Pending approval">Pending approval</option><option value="Approved">Approved</option></select></label></section>' + (viewName === 'overview' ? '<h2>Selected collection summary</h2><div id="summary"></div><h2>Unapproved agent tickets</h2><div id="agents"></div><h2>Unapproved field employee tickets</h2><div id="fields"></div>' : '<p class="muted">Only approved tickets are displayed on this page.</p><div id="results"></div>');
+        root.innerHTML = '<section class="filters"><label>Person <select id="person"><option value="">All employees and agents</option></select></label><label>Status <select id="status"><option value="all">All statuses</option><option value="Pending approval">Pending approval</option><option value="Approved">Approved</option></select></label></section>' + (viewName === 'overview' ? '<h2>Selected collection summary</h2><div id="summary"></div><h2>Unapproved pickup requests</h2><div id="pickups"></div><h2>Unapproved agent tickets</h2><div id="agents"></div><h2>Unapproved field employee tickets</h2><div id="fields"></div>' : '<p class="muted">Only approved items are displayed on this page.</p><div id="results"></div>');
         const personSelect = $('#person');
         accounts.forEach((account) => personSelect.add(new Option(`${account.fullName} — ${account.role === 'fieldEmployee' ? 'Field employee' : 'Agent'}`, account.email)));
         const statusSelect = $('#status');
@@ -303,7 +308,8 @@
           if (viewName === 'overview') {
             renderSummary(selected);
             selected = selected.filter((request) => request.status !== 'Approved');
-            listRequests($('#agents'), selected.filter((request) => !isField(request)), 'No unapproved agent requests match these filters.');
+            listRequests($('#pickups'), selected.filter(isPickupRequest), 'No unapproved pickup requests match these filters.');
+            listRequests($('#agents'), selected.filter(isAgentTicket), 'No unapproved agent tickets match these filters.');
             listRequests($('#fields'), selected.filter(isField), 'No unapproved field employee requests match these filters.');
           } else {
             listRequests($('#results'), selected, 'No requests match these filters.');
@@ -459,7 +465,8 @@
           accounts = accountData.accounts || [];
           dateApprovals = dateApprovalData.requests || [];
           applications = applicationData.applications || [];
-          if (viewName === 'approved-agents') requests = requests.filter((request) => !isField(request) && request.status === 'Approved');
+          if (viewName === 'approved-pickups') requests = requests.filter((request) => isPickupRequest(request) && request.status === 'Approved');
+          if (viewName === 'approved-agents') requests = requests.filter((request) => isAgentTicket(request) && request.status === 'Approved');
           if (viewName === 'approved-fields') requests = requests.filter((request) => isField(request) && request.status === 'Approved');
           if (viewName === 'accounts') renderAccounts();
           else if (viewName === 'applications') renderApplications();
