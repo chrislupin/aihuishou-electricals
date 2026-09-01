@@ -494,6 +494,10 @@ async function purgeNonAdminData() {
     return;
   }
 
+  if (process.env.ALLOW_NON_ADMIN_DATA_PURGE !== "true") {
+    return;
+  }
+
   const adminFilter = adminEmail ? { email: { $ne: adminEmail } } : {};
 
   await Promise.all([
@@ -526,7 +530,9 @@ async function ensureDatabase() {
 
       await migrateJsonData();
       await removeDuplicateAccounts();
-      await purgeNonAdminData();
+      if (process.env.ALLOW_NON_ADMIN_DATA_PURGE === "true") {
+        await purgeNonAdminData();
+      }
       await Promise.all([
         accountsCollection.createIndex({ email: 1 }, { unique: true }),
         pickupRequestsCollection.createIndex({ id: 1 }, { unique: true }),
