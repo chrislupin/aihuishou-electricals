@@ -6,7 +6,8 @@
     <title>Aihuishou Electricals | Kenya's e-waste recovery partner</title>
     <meta name="description" content="Aihuishou Electricals provides trusted e-waste collection, electronics recovery and responsible recycling for homes, businesses and institutions across Kenya." />
     <meta name="author" content="Aihuishou Electricals Limited" />
-    <link rel="canonical" href="/" />
+    <meta name="google-site-verification" content="M_vRy5XNMBqfDWV8yoWMxMFsQk-nmm2o8uv20sUad34" />
+    <link rel="canonical" href="https://aihuishouelectricalslimited.com/" />
     <link rel="icon" type="image/png" href="images/company-logo.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -17,7 +18,7 @@
     <meta property="og:type" content="website" />
     <meta property="og:title" content="Aihuishou Electricals | Responsible e-waste recovery in Kenya" />
     <meta property="og:description" content="Trusted electronics collection, recovery and responsible recycling for homes, businesses and institutions across Kenya." />
-    <meta property="og:url" content="/" />
+    <meta property="og:url" content="https://aihuishouelectricalslimited.com/" />
     <meta property="og:image" content="images/electronic-waste.avif" />
     <meta property="og:image:alt" content="Circuit boards and electronic components ready for responsible recovery" />
     <meta property="og:locale" content="en_KE" />
@@ -107,8 +108,12 @@
       .nav-links{
         display:flex;gap:18px;align-items:center;flex-wrap:wrap;
       }
-      .nav-links a{font-weight:800;font-size:13px;color:var(--ink)}
+      .nav-links a{font-weight:800;font-size:13px;color:var(--ink);position:relative}
       .nav-links a:hover{color:var(--orange)}
+      .nav-links a::after{
+        content:"";position:absolute;left:0;bottom:-6px;height:2px;width:0;background:var(--orange);transition:width .2s ease;border-radius:999px;
+      }
+      .nav-links a:hover::after{width:100%}
       :focus-visible{outline:3px solid rgba(35,103,255,.45);outline-offset:3px}
       .hero{padding:56px 0 26px}
       .hero-grid{display:grid;grid-template-columns:1.15fr .85fr;gap:26px;align-items:center}
@@ -155,6 +160,18 @@
       }
       .card h3{margin:10px 0 6px;font-size:16px}
       .card p{margin:0;color:var(--muted);font-size:14px}
+      .buy-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:18px}
+      .buy-item{
+        background:rgba(255,255,255,.82);border:1px solid var(--line);border-radius:var(--radius);padding:18px 16px;
+        display:flex;align-items:flex-start;gap:12px;min-height:90px;
+      }
+      .buy-icon{font-size:24px;line-height:1}
+      .buy-item h3{margin:0 0 4px;font-size:16px}
+      .buy-item p{margin:0;color:var(--muted);font-size:14px}
+      .cta-banner{
+        margin-top:18px;background:linear-gradient(135deg, rgba(35,103,255,.09), rgba(111,231,255,.12));
+        border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap
+      }
       .process{
         border-top:1px solid var(--line);
         padding-top:26px;margin-top:18px;
@@ -165,6 +182,14 @@
         padding:16px;
       }
       .step .num{color:var(--orange);font-weight:1000}
+      .process-grid{display:grid;grid-template-columns:repeat(5, minmax(0,1fr));gap:12px;margin-top:20px}
+      .process-card{
+        background:rgba(255,255,255,.82);border:1px solid var(--line);border-radius:var(--radius);
+        padding:16px;min-height:150px;
+      }
+      .process-card .num{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;background:rgba(35,103,255,.1);border-radius:50%;color:var(--orange);font-weight:900;margin-bottom:12px}
+      .process-card h3{margin:0 0 8px;font-size:16px}
+      .process-card p{margin:0;color:var(--muted);font-size:13px;line-height:1.5}
       .metrics{
         background:var(--ink);color:var(--paper);border-radius:var(--radius);
         padding:22px;display:grid;grid-template-columns:repeat(3,1fr);gap:16px;
@@ -175,10 +200,48 @@
       .split{
         display:grid;grid-template-columns:1.2fr .8fr;gap:20px;align-items:start;
       }
+      .customer-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-top:18px}
+      .customer-card{
+        background:rgba(255,255,255,.82);border:1px solid var(--line);border-radius:var(--radius);padding:18px 16px;
+      }
+      .customer-card h3{margin:0 0 8px;font-size:18px}
+      .customer-card p{margin:0 0 12px;color:var(--muted);font-size:14px}
+      .impact-dashboard{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-top:18px}
+      .impact-card{
+        background:linear-gradient(180deg, rgba(255,255,255,.9), rgba(240,247,255,.9));
+        border:1px solid var(--line);border-radius:var(--radius);padding:20px 18px;text-align:center;
+      }
+      .impact-card strong{display:block;font-size:clamp(26px,3vw,42px);letter-spacing:-2px;color:var(--ink);word-break:break-word;line-height:1.05}
+      .impact-card span{display:block;color:var(--orange);font-size:13px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;margin-top:6px;word-break:break-word}
+      .impact-card small{display:block;color:var(--muted);font-size:14px;margin-top:6px;word-break:break-word;line-height:1.5}
+      .impact-meta{margin-top:10px;color:var(--muted);font-size:13px;font-weight:700}
+      .about-grid{display:grid;grid-template-columns:1.2fr .8fr;gap:22px;margin-top:18px}
+      .about-panel{
+        background:rgba(255,255,255,.82);border:1px solid var(--line);border-radius:var(--radius);
+        padding:22px;border-left:4px solid var(--orange);
+      }
+      .about-panel h3{margin:0 0 12px;font-size:22px}
+      .about-panel p{margin:0 0 10px;color:var(--muted);font-size:15px}
+      .value-list{list-style:none;padding:0;margin:0;display:grid;gap:10px}
+      .value-list li{background:rgba(248,252,255,.9);border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-weight:700}
+      .contact-grid{display:grid;grid-template-columns:1fr 1.1fr;gap:18px}
+      .contact-info{background:rgba(255,255,255,.82);border:1px solid var(--line);border-radius:var(--radius);padding:20px}
+      .contact-list{list-style:none;padding:0;margin:16px 0 0;display:grid;gap:12px}
+      .contact-list li{display:flex;gap:12px;align-items:flex-start;padding:10px 12px;background:rgba(248,252,255,.9);border:1px solid var(--line);border-radius:12px;flex-wrap:wrap}
+      .contact-list strong{display:block;min-width:76px;color:var(--ink)}
+      .contact-list span{word-break:break-word;overflow-wrap:anywhere}
+      .contact-list a{color:var(--orange);font-weight:700;word-break:break-word}
+      .map-box{background:rgba(255,255,255,.82);border:1px solid var(--line);border-radius:var(--radius);padding:12px;overflow:hidden}
+      .map-box iframe{width:100%;min-height:320px;border:0;border-radius:12px;display:block}
+      .faq-list{display:grid;gap:12px;margin-top:18px}
+      .faq-list details{background:rgba(255,255,255,.82);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px}
+      .faq-list summary{font-weight:900;cursor:pointer}
+      .faq-list p{margin:12px 0 0;color:var(--muted);font-size:14px}
       .form-wrap{
         background:rgba(255,255,255,.82);border:1px solid var(--line);border-radius:var(--radius);
         padding:18px;
       }
+      .form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
       label{display:block;font-weight:800;font-size:13px;margin-top:12px;margin-bottom:6px}
       input, select, textarea{
         width:100%;padding:12px 12px;border-radius:12px;border:1px solid var(--line);
@@ -186,6 +249,7 @@
         font-size:14px;
       }
       input:focus, select:focus, textarea:focus{border-color:rgba(35,103,255,.7)}
+      textarea{min-height:120px;resize:vertical}
       .checkrow{display:flex;gap:10px;align-items:flex-start;margin-top:12px}
       .checkrow input{width:auto;margin-top:3px}
       .form-actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:18px}
@@ -198,11 +262,22 @@
       @media (max-width: 900px){
         .hero-grid{grid-template-columns:1fr;gap:18px}
         .cards{grid-template-columns:1fr; }
+        .buy-list{grid-template-columns:1fr}
+        .customer-grid{grid-template-columns:1fr}
         .steps{grid-template-columns:1fr}
+        .process-grid{grid-template-columns:1fr 1fr}
         .grid-2{grid-template-columns:1fr}
+        .form-grid{grid-template-columns:1fr}
         .metrics{grid-template-columns:1fr; }
         .split{grid-template-columns:1fr}
         .nav-links{display:none}
+      }
+      @media (max-width: 560px){
+        .process-grid{grid-template-columns:1fr}
+        .nav { gap:10px; padding:12px 0; }
+        .brand { font-size:12px; }
+        .brand-badge { width:28px; height:28px; }
+        .nav-cta { width:100%; }
       }
     </style>
   </head>
@@ -217,15 +292,16 @@
         </div>
 
         <nav class="nav-links" aria-label="Primary">
-          <a href="#impact">Our impact</a>
-          <a href="#how">How it works</a>
+          <a href="#">Home</a>
+          <a href="#impact">What We Buy</a>
+          <a href="#services">Services</a>
+          <a href="#how">How It Works</a>
+          <a href="#business">For Businesses</a>
+          <a href="#about">About Us</a>
           <a href="#contact">Contact</a>
         </nav>
 
-        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
-          <a class="btn btn-ghost" href="tel:+254716333399">Call</a>
-          <a class="btn btn-primary" href="agent-application.html">Join us</a>
-        </div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:flex-end"></div>
       </div>
     </header>
 
@@ -250,29 +326,12 @@
             </p>
 
             <div class="hero-actions">
-              <a class="btn btn-accent" href="#contact">Book a pickup ↗</a>
-              <a class="btn btn-primary" id="whatsAppBtn" href="#" rel="noopener">Sell directly on WhatsApp ↗</a>
+              <a class="btn btn-accent" id="whatsAppBtn" href="#" rel="noopener">Sell Your E-Waste →</a>
+              <a class="btn btn-primary" href="#contact">Need a Pickup? Book a collection →</a>
               <a class="btn btn-ghost" href="#how">See how it works ↓</a>
             </div>
 
-            <div class="process">
-              <div class="section-title">Since 2018 • Traceable & responsible</div>
-              <div class="metrics" style="margin-top:18px">
-                <div class="metric">
-                  <strong>12k+</strong>
-                  <div><small>Devices recovered</small></div>
-                </div>
-                <div class="metric">
-                  <strong>48t</strong>
-                  <div><small>Waste diverted</small></div>
-                </div>
-                <div class="metric">
-                  <strong>100%</strong>
-                  <div><small>Traceable process</small></div>
-                </div>
-              </div>
-            </div>
-          </div>
+           
 
           <!-- HERO IMAGE -->
           <div class="hero-card" aria-label="E-waste recovery visual">
@@ -293,12 +352,36 @@
       <!-- IMPACT / CARDS -->
       <section class="section" id="impact">
         <div class="container">
-          <div class="section-title">Responsible recovery</div>
+          <div class="section-title">Our impact</div>
           <h2 style="margin:10px 0 0;font-size:clamp(26px,4vw,40px);letter-spacing:-2px;line-height:1.05">
-            Better electronics lifecycle—every device gets a second story.
+            A trusted electronics recovery partner for Kenya.
           </h2>
 
-          <div class="cards">
+          <div class="impact-dashboard">
+            <div class="impact-card">
+              <strong>12,000+</strong>
+              <span>Devices recovered</span>
+              <small>Phones, boards, laptops and more</small>
+            </div>
+            <div class="impact-card">
+              <strong>48+</strong>
+              <span>Tonnes diverted</span>
+              <small>E-waste kept out of landfills</small>
+            </div>
+            <div class="impact-card">
+              <strong>100%</strong>
+              <span>Traceable process</span>
+              <small>Each item follows a recovery route</small>
+            </div>
+            <div class="impact-card">
+              <strong>Since 2025</strong>
+              <span>Serving Kenya</span>
+              <small>Homes, businesses and institutions</small>
+            </div>
+          </div>
+          <div class="impact-meta">Updated: August 2026</div>
+
+          <div class="cards" style="margin-top:22px">
             <div class="card">
               <span style="color:var(--orange);font-size:24px">📱</span>
               <h3>Phones & devices</h3>
@@ -318,6 +401,120 @@
         </div>
       </section>
 
+      <section class="section" id="about">
+        <div class="container">
+          <div class="section-title">About Aihuishou</div>
+          <h2 style="margin:10px 0 0;font-size:clamp(22px,3.6vw,34px);letter-spacing:-1.5px">
+            Built for responsible electronics recovery in Kenya.
+          </h2>
+
+          <div class="about-grid">
+            <div class="about-panel">
+              <h3>About Aihuishou Electricals Limited</h3>
+              <p>Aihuishou Electricals Limited is a Kenyan electronic waste recovery company focused on collecting, recovering and responsibly managing unwanted electronic equipment and components.</p>
+              <p>We help homes, businesses and institutions manage obsolete devices in a way that protects the environment, recovers valuable materials and supports a circular economy.</p>
+              <p>Our work is grounded in traceability, compliance-minded handling and practical operational support for customers who need a cleaner and more responsible electronics lifecycle.</p>
+            </div>
+
+            <div class="about-panel">
+              <h3>Values</h3>
+              <ul class="value-list">
+                <li>Responsible recovery</li>
+                <li>Traceable operations</li>
+                <li>Customer-first service</li>
+                <li>Environmental accountability</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="services">
+        <div class="container">
+          <div class="section-title">What we buy</div>
+          <h2 style="margin:10px 0 0;font-size:clamp(22px,3.6vw,34px);letter-spacing:-1.5px">
+            Recovering value from electronics you no longer need.
+          </h2>
+
+          <div class="buy-list">
+            <div class="buy-item">
+              <div class="buy-icon">♻️</div>
+              <div>
+                <h3>Motherboards</h3>
+                <p>All types of dead and unwanted motherboards.</p>
+              </div>
+            </div>
+            <div class="buy-item">
+              <div class="buy-icon">💾</div>
+              <div>
+                <h3>RAM</h3>
+                <p>Desktop and laptop RAM modules.</p>
+              </div>
+            </div>
+            <div class="buy-item">
+              <div class="buy-icon">🧠</div>
+              <div>
+                <h3>CPUs</h3>
+                <p>Processors and other recoverable components.</p>
+              </div>
+            </div>
+            <div class="buy-item">
+              <div class="buy-icon">📱</div>
+              <div>
+                <h3>Mobile phones</h3>
+                <p>Dead, damaged and unwanted phones.</p>
+              </div>
+            </div>
+            <div class="buy-item">
+              <div class="buy-icon">🖥️</div>
+              <div>
+                <h3>LCD screens</h3>
+                <p>LCD panels and screens.</p>
+              </div>
+            </div>
+            <div class="buy-item">
+              <div class="buy-icon">🔋</div>
+              <div>
+                <h3>Batteries</h3>
+                <p>Used electronic batteries.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="cta-banner">
+            <div><strong>Don’t see your item?</strong> Tell us what you have and we’ll advise the best next step.</div>
+            <a class="btn btn-accent" href="#contact">Contact us →</a>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="business">
+        <div class="container">
+          <div class="section-title">Who we serve</div>
+          <h2 style="margin:10px 0 0;font-size:clamp(22px,3.6vw,34px);letter-spacing:-1.5px">
+            Solutions for every customer type.
+          </h2>
+
+          <div class="customer-grid">
+            <div class="customer-card">
+              <h3>👤 Individuals</h3>
+              <p>Sell your unwanted electronics and get a quick quote for the right next step.</p>
+              <a class="btn btn-ghost" href="#contact">Get a quote</a>
+            </div>
+            <div class="customer-card">
+              <h3>🏢 Businesses</h3>
+              <p>Clear old IT equipment with bulk collection and documented recovery outcomes.</p>
+              <a class="btn btn-ghost" href="#contact">Schedule bulk collection</a>
+            </div>
+            <div class="customer-card">
+              <h3>🏫 Institutions</h3>
+              <p>Arrange safe electronics disposal with responsible handling and reporting.</p>
+              <a class="btn btn-ghost" href="#contact">Arrange collection</a>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- HOW IT WORKS -->
       <section class="section" id="how">
         <div class="container">
@@ -328,30 +525,34 @@
                 Clear steps. Clear reporting.
               </h2>
               <p class="muted" style="margin:0;max-width:560px">
-                We make disposal straightforward for homes, businesses and institutions—while keeping recovery traceable.
+                We make disposal straightforward for homes, businesses and institutions—while keeping recovery traceable and professionally managed.
               </p>
 
-              <div class="steps">
-                <div class="step">
+              <div class="process-grid">
+                <div class="process-card">
                   <div class="num">01</div>
-                  <h3 style="margin:6px 0 6px">We collect</h3>
-                  <p class="muted" style="margin:0;font-size:14px">
-                    Book a convenient pickup anywhere in Nairobi and beyond. We handle logistics.
-                  </p>
+                  <h3>Collection</h3>
+                  <p>We collect your unwanted electronics from your home, business or institution.</p>
                 </div>
-                <div class="step">
+                <div class="process-card">
                   <div class="num">02</div>
-                  <h3 style="margin:6px 0 6px">We sort & recover</h3>
-                  <p class="muted" style="margin:0;font-size:14px">
-                    Devices are assessed, securely handled and directed to their highest-value next use.
-                  </p>
+                  <h3>Inspection</h3>
+                  <p>Items are assessed and categorized before recovery or recycling decisions are made.</p>
                 </div>
-                <div class="step">
+                <div class="process-card">
                   <div class="num">03</div>
-                  <h3 style="margin:6px 0 6px">We report back</h3>
-                  <p class="muted" style="margin:0;font-size:14px">
-                    Get a clear record of your impact and where your electronics went.
-                  </p>
+                  <h3>Reuse & Recovery</h3>
+                  <p>Reusable equipment and components are identified for recovery and highest-value use.</p>
+                </div>
+                <div class="process-card">
+                  <div class="num">04</div>
+                  <h3>Responsible Processing</h3>
+                  <p>Non-reusable materials are directed through appropriate recovery and recycling channels.</p>
+                </div>
+                <div class="process-card">
+                  <div class="num">05</div>
+                  <h3>Reporting</h3>
+                  <p>Businesses receive documentation of recovered materials and environmental impact.</p>
                 </div>
               </div>
             </div>
@@ -364,7 +565,7 @@
                   Tell us what you have and where it is—our team will get back to you with the next step.
                 </p>
                 <div style="margin-top:14px;display:flex;gap:12px;flex-wrap:wrap">
-                  <a class="btn btn-accent" href="#contact">Start a conversation ↗</a>
+                  <a class="btn btn-accent" href="#contact">Book a pickup ↗</a>
                   <a class="btn btn-ghost" href="agent-application.html">Register as an agent ↗</a>
                 </div>
 
@@ -397,26 +598,86 @@
         </div>
       </section>
 
+      <section class="section">
+        <div class="container">
+          <div class="section-title">What happens to your electronics?</div>
+          <h2 style="margin:10px 0 0;font-size:clamp(22px,3.6vw,34px);letter-spacing:-1.5px">
+            Responsible recovery from collection to final disposition.
+          </h2>
+
+          <div class="cards">
+            <div class="card">
+              <span style="color:var(--orange);font-size:24px">📦</span>
+              <h3>Collection</h3>
+              <p>We arrange safe pickup from homes, offices, schools and other institutions.</p>
+            </div>
+            <div class="card">
+              <span style="color:var(--orange);font-size:24px">🔍</span>
+              <h3>Inspection</h3>
+              <p>Each device is categorized to decide whether it can be refurbished, recovered or recycled.</p>
+            </div>
+            <div class="card">
+              <span style="color:var(--orange);font-size:24px">📊</span>
+              <h3>Impact reporting</h3>
+              <p>We document recovery outcomes so businesses and institutions can track their waste diversion.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- CONTACT -->
       <section class="section" id="contact">
         <div class="container">
-          <div class="section-title">Contact</div>
+          <div class="section-title">Book a pickup</div>
           <h2 style="margin:10px 0 14px;font-size:clamp(22px,3.8vw,34px);letter-spacing:-1.4px">
-            Book a pickup or start a conversation
+            Tell us what you have and we’ll arrange the next step.
           </h2>
 
-          <div class="grid-2">
+          <div style="margin-top:18px" class="grid-2">
             <div class="form-wrap">
-              <h3 style="margin:0 0 10px">Quick message</h3>
+              <h3 style="margin:0 0 10px">Book a pickup</h3>
               <form id="contactForm">
-                <label for="cName">Name</label>
-                <input id="cName" name="cName" required placeholder="Your name" />
+                <div class="form-grid">
+                  <div>
+                    <label for="cName">Full name</label>
+                    <input id="cName" name="cName" required placeholder="Your full name" />
+                  </div>
 
-                <label for="cPhone">Phone</label>
-                <input id="cPhone" name="cPhone" inputmode="tel" required placeholder="+2547XXXXXXXX" />
+                  <div>
+                    <label for="cPhone">Phone number</label>
+                    <input id="cPhone" name="cPhone" inputmode="tel" required placeholder="+2547XXXXXXXX" />
+                  </div>
 
-                <label for="cMessage">What electronics do you have?</label>
-                <textarea id="cMessage" name="cMessage" rows="4" required placeholder="e.g., laptops, phones, hard drives..."></textarea>
+                  <div>
+                    <label for="cEmail">Email</label>
+                    <input id="cEmail" name="cEmail" type="email" placeholder="you@example.com" />
+                  </div>
+
+                  <div>
+                    <label for="cLocation">Location</label>
+                    <input id="cLocation" name="cLocation" required placeholder="Nairobi / Embakasi / Kiambu" />
+                  </div>
+
+                  <div>
+                    <label for="cType">Type of electronics</label>
+                    <input id="cType" name="cType" required placeholder="e.g., CPUs, phones, LCDs, batteries" />
+                  </div>
+
+                  <div>
+                    <label for="cQty">Approximate quantity</label>
+                    <input id="cQty" name="cQty" placeholder="e.g., 12 items / 3 boxes" />
+                  </div>
+
+                  <div style="grid-column:1 / -1">
+                    <label for="cDate">Preferred pickup date</label>
+                    <input id="cDate" name="cDate" type="date" />
+                  </div>
+
+                  <div style="grid-column:1 / -1">
+                    <label for="cMessage">Additional message</label>
+                    <textarea id="cMessage" name="cMessage" placeholder="Tell us more about the items, pickup access or urgency."></textarea>
+                  </div>
+                </div>
 
                 <div class="form-actions">
                   <button class="btn btn-primary" type="submit">Send via WhatsApp ↗</button>
@@ -427,30 +688,79 @@
             </div>
 
             <div class="hero-card" style="background:rgba(255,255,255,.82);border:1px solid var(--line);padding:16px">
-              <h3 style="margin:0 0 10px">Direct sellers: WhatsApp</h3>
-              <p class="muted" style="margin:0 0 14px;font-size:14px">
-                For direct sellers of e-waste products, message us and we’ll respond with the next step.
-              </p>
-              <div style="display:flex;gap:12px;flex-wrap:wrap">
-                <a class="btn btn-accent" href="#" id="whatsAppDirect">Chat on WhatsApp ↗</a>
+              <h3 style="margin:0 0 10px">Frequently asked questions</h3>
+              <div class="faq-list">
+                <details>
+                  <summary>What electronic waste do you buy?</summary>
+                  <p>We buy and recover a wide range of electronic waste including motherboards, CPUs, RAM, LCD screens, batteries, laptops and mobile phones.</p>
+                </details>
+                <details>
+                  <summary>Do you collect e-waste from homes?</summary>
+                  <p>Yes. We collect from homes, offices and institutions, depending on the size and type of items.</p>
+                </details>
+                <details>
+                  <summary>Do you collect from businesses?</summary>
+                  <p>Yes. We support businesses and organizations with scheduled collections and recovery reporting.</p>
+                </details>
+                <details>
+                  <summary>Where are you located?</summary>
+                  <p>We are based in Viken Thirty, Ruai, Nairobi, Kenya, and serve customers across Nairobi and surrounding areas.</p>
+                </details>
+                <details>
+                  <summary>Do you buy damaged electronics?</summary>
+                  <p>Yes. We buy damaged, obsolete and non-working electronics that can still be recovered or processed responsibly.</p>
+                </details>
+                <details>
+                  <summary>Do you buy dead motherboards?</summary>
+                  <p>Yes. Dead or unwanted motherboards are part of our recovery stream and are assessed for material and component value.</p>
+                </details>
+                <details>
+                  <summary>How do I sell my e-waste?</summary>
+                  <p>Send us a WhatsApp message or complete the pickup form with your details and the items you have available.</p>
+                </details>
+                <details>
+                  <summary>Do you provide pickup services?</summary>
+                  <p>Yes. Pickup arrangements are available for households, businesses and institutions depending on the volume and location.</p>
+                </details>
+                <details>
+                  <summary>How does your agent program work?</summary>
+                  <p>Agents can register through our application portal and get support for collection and recovery operations as part of the network.</p>
+                </details>
+                <details>
+                  <summary>What happens to my electronics after collection?</summary>
+                  <p>Items are inspected, categorized, recovered for reuse where possible and directed to responsible recycling channels when necessary.</p>
+                </details>
+                <details>
+                  <summary>How do you handle devices with personal data?</summary>
+                  <p>We advise customers to remove personal data before pickup. Where required, devices are handled with careful sorting and secure processing practices.</p>
+                </details>
+              </div>
+            </div>
+          </div>
+
+          <div class="contact-grid" style="margin-top:28px">
+            <div class="contact-info">
+              <h3 style="margin:0 0 10px">Contact details</h3>
+              <ul class="contact-list">
+                <li><strong>Location</strong><span>Viken Thirty, Ruai, Nairobi, Kenya</span></li>
+                <li><strong>Phone</strong><span><a href="tel:+254716333399">+254 716 333 399</a></span></li>
+                <li><strong>Email</strong><span><a href="mailto:aihuishoulimited@gmail.com">aihuishoulimited@gmail.com</a></span></li>
+                <li><strong>TikTok</strong><span><a href="https://www.tiktok.com/@aihuishoulimited" target="_blank" rel="noopener">@aihuishoulimited</a></span></li>
+              </ul>
+
+              <div style="margin-top:18px;display:flex;gap:12px;flex-wrap:wrap">
+                <a class="btn btn-accent" href="#" id="whatsAppDirect">WhatsApp us →</a>
                 <a class="btn btn-ghost" href="mailto:aihuishoulimited@gmail.com">Email us</a>
               </div>
+            </div>
 
-              <div style="margin-top:16px">
-                <div class="chip">
-                  <span style="width:10px;height:10px;border-radius:50%;background:var(--lime);display:inline-block"></span>
-                  Nairobi • Kenya (pickup across Nairobi & beyond)
-                </div>
-              </div>
-
-              <div style="margin-top:16px;height:220px;overflow:hidden;border-radius:var(--radius);border:1px solid var(--line)">
-                <img
-                  src="images/electronic%20waste%20collection.png"
-                  alt="Electronic waste collection"
-                  loading="lazy"
-                  style="width:100%;height:100%;object-fit:cover"
-                />
-              </div>
+            <div class="map-box">
+              <iframe
+                title="Aihuishou Electricals location map"
+                src="https://www.google.com/maps?q=Viken%20Thirty%2C%20Ruai%2C%20Nairobi%2C%20Kenya&output=embed"
+                loading="lazy"
+                referrerpolicy="no-referrer-when-downgrade"
+              ></iframe>
             </div>
           </div>
         </div>
@@ -506,13 +816,32 @@
 
       contactForm?.addEventListener("submit", (e) => {
         e.preventDefault();
-        const name = document.getElementById("cName").value.trim();
-        const phone = document.getElementById("cPhone").value.trim();
-        const goods = document.getElementById("cMessage").value.trim();
-        const message = `Hi Aihuishou Electricals — I would like to book a pickup.\n\nName: ${name}\nPhone: ${phone}\nElectronics: ${goods}`;
+        const values = {
+          name: document.getElementById("cName")?.value.trim() || "",
+          phone: document.getElementById("cPhone")?.value.trim() || "",
+          email: document.getElementById("cEmail")?.value.trim() || "",
+          location: document.getElementById("cLocation")?.value.trim() || "",
+          type: document.getElementById("cType")?.value.trim() || "",
+          quantity: document.getElementById("cQty")?.value.trim() || "",
+          date: document.getElementById("cDate")?.value || "",
+          message: document.getElementById("cMessage")?.value.trim() || ""
+        };
+
+        const summary = [
+          "Hi Aihuishou Electricals — I would like to book a pickup.",
+          "",
+          `Full name: ${values.name}`,
+          `Phone: ${values.phone}`,
+          `Email: ${values.email || "Not provided"}`,
+          `Location: ${values.location}`,
+          `Type of electronics: ${values.type}`,
+          `Approximate quantity: ${values.quantity || "Not provided"}`,
+          `Preferred pickup date: ${values.date || "Not provided"}`,
+          `Additional message: ${values.message || "None"}`
+        ].join("\n");
 
         contactStatus.textContent = "Opening WhatsApp...";
-        window.location.assign(waLink(message));
+        window.location.assign(waLink(summary));
         contactForm.reset();
       });
 

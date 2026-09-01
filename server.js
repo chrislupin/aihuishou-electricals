@@ -132,13 +132,43 @@ app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "index.html"));
 });
 
+app.get("/robots.txt", (req, res) => {
+  const host = req.get("host") || "";
+  const isLocal = /^(localhost|127\.0\.0\.1|0\.0\.0\.0)/.test(host);
+  const baseUrl = process.env.APP_URL || (isLocal ? `http://${host}` : "https://aihuishouelectricalslimited.com");
+  res.type("text/plain").send(
+    "User-agent: *\n" +
+    "Allow: /\n" +
+    "Allow: /agent-application.html\n" +
+    "Disallow: /api/\n" +
+    "Disallow: /password-reset.html\n" +
+    "Disallow: /admin-login.html\n" +
+    "Disallow: /admin-dashboard.html\n" +
+    "Disallow: /admin-analysis.html\n" +
+    "Disallow: /agent-login.html\n" +
+    "Disallow: /agent-dashboard.html\n" +
+    "Disallow: /field-employee-login.html\n" +
+    "Disallow: /field-employee-dashboard.html\n" +
+    `Sitemap: ${baseUrl.replace(/\/+$/, "")}/sitemap.xml\n`
+  );
+});
+
 app.get("/sitemap.xml", (req, res) => {
-  const configuredBase = process.env.APP_URL || `${req.protocol}://${req.get("host")}`;
+  const host = req.get("host") || "";
+  const isLocal = /^(localhost|127\.0\.0\.1|0\.0\.0\.0)/.test(host);
+  const configuredBase = process.env.APP_URL || (isLocal ? `http://${host}` : "https://aihuishouelectricalslimited.com");
   const baseUrl = configuredBase.replace(/\/+$/, "");
+  const publicUrls = [
+    "/",
+    "/about.html",
+    "/services.html",
+    "/contact.html",
+    "/agent-application.html"
+  ];
   res.type("application/xml").send(
     `<?xml version="1.0" encoding="UTF-8"?>\n` +
     `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n` +
-    `  <url><loc>${baseUrl}/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>\n` +
+    publicUrls.map((path) => `  <url><loc>${baseUrl}${path}</loc><changefreq>weekly</changefreq><priority>${path === "/" ? "1.0" : "0.7"}</priority></url>`).join("\n") + `\n` +
     `</urlset>`
   );
 });
@@ -443,6 +473,24 @@ async function removeDuplicateAccounts() {
   }
 }
 
+async function purgeNonAdminData() {
+  if (!database) {
+    return;
+  }
+
+  const adminFilter = adminEmail ? { email: { $ne: adminEmail } } : {};
+
+  await Promise.all([
+    accountsCollection.deleteMany({}),
+    pickupRequestsCollection.deleteMany({}),
+    pickupDateRequestsCollection.deleteMany({}),
+    passwordResetCollection.deleteMany({}),
+    agentApplicationsCollection.deleteMany({}),
+    agentAccessInvitesCollection.deleteMany({}),
+    adminAccountsCollection.deleteMany(adminFilter)
+  ]);
+}
+
 async function ensureDatabase() {
   if (!mongoClient) {
     throw new Error("MONGODB_URI is required.");
@@ -462,6 +510,7 @@ async function ensureDatabase() {
 
       await migrateJsonData();
       await removeDuplicateAccounts();
+      await purgeNonAdminData();
       await Promise.all([
         accountsCollection.createIndex({ email: 1 }, { unique: true }),
         pickupRequestsCollection.createIndex({ id: 1 }, { unique: true }),

@@ -1,10 +1,16 @@
 User-agent: *
 Allow: /
+Allow: /about.html
+Allow: /services.html
+Allow: /contact.html
+Allow: /agent-application.html
 Disallow: /api/
+Disallow: /password-reset.html
 Disallow: /admin-login.html
 Disallow: /admin-dashboard.html
 Disallow: /admin-analysis.html
-Disallow: /agent-application.html
 Disallow: /agent-login.html
 Disallow: /agent-dashboard.html
+Disallow: /field-employee-login.html
 Disallow: /field-employee-dashboard.html
+Sitemap: https://aihuishouelectricalslimited.com/sitemap.xml
