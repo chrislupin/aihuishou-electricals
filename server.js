@@ -213,6 +213,20 @@ function normalizeEmail(email) {
   return typeof email === "string" ? email.trim().toLowerCase() : "";
 }
 
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function emailLookupMatcher(email) {
+  const normalized = normalizeEmail(email);
+  if (!normalized) return { email: null };
+  return {
+    email: {
+      $regex: new RegExp(`^${escapeRegExp(normalized)}$`, "i")
+    }
+  };
+}
+
 function isValidPassword(password) {
   return typeof password === "string" && password.length >= 8 && password.length <= MAX_PASSWORD_LENGTH;
 }
@@ -323,7 +337,9 @@ async function readAccounts() {
 
 async function getAccountByEmail(email) {
   if (!accountsCollection) throw new Error("MONGODB_URI is not configured.");
-  return withoutMongoId(await accountsCollection.findOne({ email }));
+  const normalizedEmail = normalizeEmail(email);
+  if (!normalizedEmail) return null;
+  return withoutMongoId(await accountsCollection.findOne(emailLookupMatcher(normalizedEmail)));
 }
 
 async function saveAccounts(accounts) {
@@ -745,11 +761,12 @@ app.post(
   async (req, res) => {
     const { email, password } =
       req.body || {};
+    const normalizedEmail = normalizeEmail(email);
 
     if (
       typeof email !== "string" ||
       typeof password !== "string" ||
-      !email.trim() ||
+      !normalizedEmail ||
       !isValidPassword(password)
     ) {
       return res.status(400).json({
@@ -758,7 +775,7 @@ app.post(
     }
 
     try {
-      const account = await getAccountByEmail(normalizeEmail(email));
+      const account = await getAccountByEmail(normalizedEmail);
 
       if (
         !account ||
@@ -1184,6 +1201,13 @@ app.post("/api/password-reset/request", authLimiter, async (req, res) => {
     return res.status(400).json({ error: "Please provide a valid email address." });
   }
 
+  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
+    console.error("Password reset email failed: SMTP credentials are not configured.");
+    return res.status(503).json({
+      error: "Email sending is not configured on this server. Set SMTP_HOST, SMTP_USER and SMTP_PASS before using password reset."
+    });
+  }
+
   try {
     const account = await getAccountByEmail(email);
     const isAdmin = email === adminEmail;
@@ -1209,6 +1233,9 @@ app.post("/api/password-reset/request", authLimiter, async (req, res) => {
         });
       } catch (error) {
         console.error("Password reset email failed:", error.message);
+        return res.status(503).json({
+          error: "The password reset email could not be sent right now. Please try again later or contact the administrator."
+        });
       }
     }
 
@@ -1402,7 +1429,7 @@ app.post("/api/agent-applications", requestLimiter, rejectBotSubmission, async (
 });
 
 app.post("/api/agent-invitation/confirm", authLimiter, async (req, res) => {
-  const email = applicationEmail(req.body?.email);
+  const email = normalizeEmail(req.body?.email);
   const token = typeof req.body?.token === "string" ? req.body.token : "";
   const password = typeof req.body?.password === "string" ? req.body.password : "";
 
@@ -1422,8 +1449,8 @@ app.post("/api/agent-invitation/confirm", authLimiter, async (req, res) => {
     const salt = crypto.randomBytes(16).toString("hex");
     const passwordHash = (await scrypt(password, salt, 64)).toString("hex");
     const result = await accountsCollection.updateOne(
-      { email, role: "agent", accessStatus: "invited" },
-      { $set: { salt, passwordHash, accessStatus: "active", activatedAt: new Date().toISOString() } }
+      { email: { $regex: new RegExp(`^${escapeRegExp(email)}$`, "i") }, role: "agent", accessStatus: "invited" },
+      { $set: { email, salt, passwordHash, accessStatus: "active", activatedAt: new Date().toISOString() } }
     );
     if (!result.matchedCount) return res.status(400).json({ error: "This account is no longer waiting for activation." });
 
