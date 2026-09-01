@@ -172,6 +172,8 @@
       .section{padding:44px 0}
       .section-title{font-size:13px;letter-spacing:1.6px;text-transform:uppercase;color:var(--orange);font-weight:900}
       .company-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:190px}
+      .brand{display:flex;align-items:center;gap:10px;min-width:0}
+      .company-logo{flex-shrink:0}
       .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:22px}
       .cards{display:grid;grid-template-columns:repeat(3, 1fr);gap:14px;margin-top:18px}
       .card{
@@ -303,7 +305,9 @@
         .metrics{grid-template-columns:1fr; }
         .split{grid-template-columns:1fr}
         .about-grid{grid-template-columns:1fr}
-        .nav-links{display:none}
+        .nav{height:auto;padding:12px 0;flex-wrap:wrap}
+        .nav-links{display:flex;order:3;width:100%;gap:10px 14px;overflow-x:auto;white-space:nowrap;padding-bottom:2px;-webkit-overflow-scrolling:touch}
+        .nav-links a{font-size:12px}
       }
       @media (max-width: 560px){
         .process-grid{grid-template-columns:1fr}
@@ -328,6 +332,7 @@
         .brand { font-size:12px; }
         .brand-badge { width:28px; height:28px; }
         .nav-cta { width:100%; }
+        .brand{width:auto;justify-content:center;flex-shrink:1}
       }
     </style>
   </head>
@@ -348,6 +353,7 @@
           <a href="#how">How It Works</a>
           <a href="#business">For Businesses</a>
           <a href="#about">About Us</a>
+          <a href="#faq">FAQ</a>
           <a href="#contact">Contact</a>
         </nav>
 
@@ -723,7 +729,7 @@
               </form>
             </div>
 
-            <div class="hero-card" style="background:rgba(255,255,255,.82);border:1px solid var(--line);padding:16px">
+            <div class="hero-card" id="faq" style="background:rgba(255,255,255,.82);border:1px solid var(--line);padding:16px">
               <h3 style="margin:0 0 10px">Frequently asked questions</h3>
               <div class="faq-list">
                 <details>
