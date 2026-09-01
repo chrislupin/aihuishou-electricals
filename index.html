@@ -90,6 +90,10 @@
       .btn-ghost{
         background:rgba(255,255,255,.66);border-color:rgba(132,185,225,.9);color:var(--ink);
       }
+      .btn-agent{
+        background:linear-gradient(135deg, rgba(255,255,255,.92), rgba(122,217,255,.28) 35%, rgba(35,103,255,.12));
+        border-color:rgba(35,103,255,.24); color:var(--ink); box-shadow:0 12px 24px rgba(35,103,255,.10);
+      }
       .btn-accent{
         background:linear-gradient(135deg, var(--orange), #3d86ff); color:var(--paper);
         border-color:rgba(35,103,255,.2);
@@ -135,6 +139,8 @@
       }
       .lead{color:var(--muted);font-size:16px;max-width:520px;margin:0}
       .hero-actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:22px}
+      .hero-actions .btn{flex:0 0 auto}
+      .hero-actions .btn-agent{min-width:220px}
       .hero-card{
         border:1px solid rgba(132,185,225,.9);border-radius:var(--radius);
         overflow:hidden;background:linear-gradient(135deg, rgba(255,255,255,.95), rgba(122,217,255,.12) 40%, rgba(255,176,97,.10));
@@ -295,10 +301,16 @@
         .form-grid{grid-template-columns:1fr}
         .metrics{grid-template-columns:1fr; }
         .split{grid-template-columns:1fr}
+        .about-grid{grid-template-columns:1fr}
         .nav-links{display:none}
       }
       @media (max-width: 560px){
         .process-grid{grid-template-columns:1fr}
+        .hero-actions{display:grid;grid-template-columns:1fr;gap:10px}
+        .hero-actions .btn,.hero-actions .btn-agent{width:100%;min-width:0}
+        .about-panel{padding:18px}
+        .about-panel h3{font-size:18px}
+        .value-list li{font-size:14px}
         .nav { gap:10px; padding:12px 0; }
         .brand { font-size:12px; }
         .brand-badge { width:28px; height:28px; }
@@ -354,7 +366,7 @@
               <a class="btn btn-accent" id="whatsAppBtn" href="#" rel="noopener">Sell Your E-Waste →</a>
               <a class="btn btn-primary" href="#contact">Need a Pickup? Book a collection →</a>
               <a class="btn btn-ghost" href="#how">See how it works ↓</a>
-              <a class="btn btn-ghost" href="agent-application.html">Register as an agent →</a>
+              <a class="btn btn-agent" href="agent-application.html">Register as an agent →</a>
             </div>
 
            
