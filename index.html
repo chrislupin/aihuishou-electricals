@@ -114,17 +114,27 @@
       .nav{
         height:74px;display:flex;align-items:center;justify-content:space-between;gap:18px;
       }
-      .brand{display:flex;align-items:center;gap:10px;font-weight:900;letter-spacing:-.3px}
+      .brand{display:flex;align-items:center;gap:10px;font-weight:900;letter-spacing:-.3px;min-width:0;flex-shrink:0}
       .brand, .nav-links, .nav .btn{font-family:'Space Grotesk',system-ui,sans-serif}
       .brand-badge{
         width:34px;height:34px;border-radius:50%;
         background:var(--lime);display:grid;place-items:center;
         font-weight:900;
       }
-      .nav-links{
-        display:flex;gap:18px;align-items:center;flex-wrap:wrap;
+      .nav-actions{position:relative;display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-shrink:0}
+      .nav-toggle{
+        appearance:none;border:1px solid rgba(132,185,225,.9);background:linear-gradient(135deg, rgba(255,255,255,.94), rgba(122,217,255,.18));
+        color:var(--ink);border-radius:12px;padding:10px 12px;font-weight:900;cursor:pointer;display:none;align-items:center;justify-content:center;box-shadow:0 10px 20px rgba(8,42,98,.05);min-width:42px;height:42px
       }
-      .nav-links a{font-weight:800;font-size:13px;color:var(--ink);position:relative}
+      .nav-toggle-icon{position:relative;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:4px;width:18px;height:14px}
+      .nav-toggle-icon span{display:block;width:100%;height:2px;border-radius:999px;background:var(--ink)}
+      .nav-links{
+        display:flex;gap:18px;align-items:center;justify-content:center;flex-wrap:wrap;flex:1;min-width:0;position:relative;
+      }
+      .nav-links a{font-weight:800;font-size:13px;color:var(--ink);position:relative;white-space:nowrap;padding:6px 0;border-radius:8px}
+      .nav-links a:hover{background:rgba(35,103,255,.06)}
+      .nav-links::-webkit-scrollbar{display:none}
+      .nav-links{scrollbar-width:none}
       .nav-links a:hover{color:var(--orange)}
       .nav-links a::after{
         content:"";position:absolute;left:0;bottom:-6px;height:2px;width:0;background:linear-gradient(90deg, var(--orange), var(--cyan));transition:width .2s ease;border-radius:999px;
@@ -305,9 +315,16 @@
         .metrics{grid-template-columns:1fr; }
         .split{grid-template-columns:1fr}
         .about-grid{grid-template-columns:1fr}
-        .nav{height:auto;padding:12px 0;flex-wrap:wrap}
-        .nav-links{display:flex;order:3;width:100%;gap:10px 14px;overflow-x:auto;white-space:nowrap;padding-bottom:2px;-webkit-overflow-scrolling:touch}
-        .nav-links a{font-size:12px}
+        .nav{height:auto;padding:12px 0;flex-wrap:nowrap;align-items:center;gap:10px}
+        .nav-actions{width:auto;justify-content:flex-end;margin-left:auto}
+        .nav-toggle{display:inline-flex}
+        .nav-links{
+          position:absolute;top:calc(100% + 10px);right:0;display:none;flex-direction:column;gap:10px;min-width:210px;padding:14px 12px;
+          background:rgba(248,252,255,.96);border:1px solid rgba(132,185,225,.8);border-radius:18px;box-shadow:0 20px 38px rgba(8,42,98,.12);z-index:60;
+          align-items:stretch;justify-content:flex-start;flex-wrap:nowrap;flex:0 0 auto
+        }
+        .nav-links.is-open{display:flex}
+        .nav-links a{padding:6px 8px}
       }
       @media (max-width: 560px){
         .process-grid{grid-template-columns:1fr}
@@ -328,11 +345,14 @@
         .contact-info .btn{width:100%}
         .map-box iframe{min-height:260px;height:260px}
         .impact-dashboard{grid-template-columns:1fr 1fr}
-        .nav { gap:10px; padding:12px 0; }
+        .nav { gap:8px; padding:10px 0; }
         .brand { font-size:12px; }
         .brand-badge { width:28px; height:28px; }
         .nav-cta { width:100%; }
-        .brand{width:auto;justify-content:center;flex-shrink:1}
+        .brand{flex-shrink:1}
+        .company-name{white-space:normal;line-height:1.2}
+        .nav-toggle{padding:9px 12px;font-size:12px}
+        .nav-links{left:0;right:auto;min-width:220px;max-width:calc(100vw - 32px)}
       }
     </style>
   </head>
@@ -346,18 +366,26 @@
           <span class="company-name">Aihuishou Electricals Limited</span>
         </div>
 
-        <nav class="nav-links" aria-label="Primary">
-          <a href="#">Home</a>
-          <a href="#impact">What We Buy</a>
-          <a href="#services">Services</a>
-          <a href="#how">How It Works</a>
-          <a href="#business">For Businesses</a>
-          <a href="#about">About Us</a>
-          <a href="#faq">FAQ</a>
-          <a href="#contact">Contact</a>
-        </nav>
+        <div class="nav-actions">
+          <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="primary-menu" aria-label="Open navigation menu">
+            <span class="nav-toggle-icon" aria-hidden="true">
+              <span></span>
+              <span></span>
+              <span></span>
+            </span>
+          </button>
 
-        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:flex-end"></div>
+          <nav class="nav-links" id="primary-menu" aria-label="Primary">
+            <a href="#">Home</a>
+            <a href="#impact">What We Buy</a>
+            <a href="#services">Services</a>
+            <a href="#how">How It Works</a>
+            <a href="#business">For Businesses</a>
+            <a href="#about">About Us</a>
+            <a href="#faq">FAQ</a>
+            <a href="#contact">Contact</a>
+          </nav>
+        </div>
       </div>
     </header>
 
@@ -820,6 +848,32 @@
 
     <script src="language.js"></script>
     <script>
+      const navToggle = document.querySelector('.nav-toggle');
+      const navLinks = document.querySelector('.nav-links');
+
+      if (navToggle && navLinks) {
+        navToggle.addEventListener('click', () => {
+          const isOpen = navLinks.classList.toggle('is-open');
+          navToggle.setAttribute('aria-expanded', String(isOpen));
+        });
+
+        navLinks.querySelectorAll('a').forEach((link) => {
+          link.addEventListener('click', () => {
+            navLinks.classList.remove('is-open');
+            navToggle.setAttribute('aria-expanded', 'false');
+          });
+        });
+
+        document.addEventListener('click', (event) => {
+          const target = event.target;
+          if (!(target instanceof Node)) return;
+          if (!navLinks.contains(target) && !navToggle.contains(target)) {
+            navLinks.classList.remove('is-open');
+            navToggle.setAttribute('aria-expanded', 'false');
+          }
+        });
+      }
+
       // =========================
       // WhatsApp redirect
       // =========================

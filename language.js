@@ -130,7 +130,7 @@
   }
 
   function addSwitcher() {
-    const target = document.querySelector(".nav, .header, .portal-header, .access-header, .admin-header");
+    const target = document.querySelector(".nav-actions, .nav, .header, .portal-header, .access-header, .admin-header");
     if (!target || target.querySelector(".language-switcher")) return;
 
     const control = document.createElement("div");
@@ -155,7 +155,7 @@
   }
 
   const style = document.createElement("style");
-  style.textContent = '.language-switcher{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:rgba(255,255,255,.72)}.language-switcher button{border:0;padding:8px 9px;background:transparent;color:var(--blue-deep);font:700 12px inherit;cursor:pointer}.language-switcher button.is-active{background:var(--blue-deep);color:#fff}.language-switcher button:focus-visible{outline:2px solid var(--orange);outline-offset:-2px}';
+  style.textContent = '.language-switcher{display:inline-flex;align-items:center;border:1px solid rgba(132,185,225,.9);border-radius:10px;overflow:hidden;background:linear-gradient(135deg, rgba(255,255,255,.96), rgba(122,217,255,.18));box-shadow:0 8px 18px rgba(8,42,98,.06)}.language-switcher button{border:0;padding:8px 10px;background:transparent;color:var(--ink);font:700 11px/1 "Space Grotesk",system-ui,sans-serif;cursor:pointer;min-width:38px}.language-switcher button.is-active{background:var(--ink);color:#fff}.language-switcher button:focus-visible{outline:2px solid var(--orange);outline-offset:-2px}.nav-actions .language-switcher{margin-left:0}';
   document.head.append(style);
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", addSwitcher, { once: true });
   else addSwitcher();
