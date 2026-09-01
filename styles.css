@@ -51,6 +51,48 @@ header {
 
 .nav-links a:hover { color: var(--orange); }
 
+.nav,
+.portal-header,
+.access-header,
+.admin-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.language-switcher {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, .72);
+  box-shadow: 0 8px 18px rgba(8, 42, 98, .06);
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.language-switcher button {
+  border: 0;
+  padding: 10px 11px;
+  background: transparent;
+  color: var(--blue-deep);
+  font: 700 12px 'Space Grotesk', system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.language-switcher button.is-active {
+  background: var(--blue-deep);
+  color: #fff;
+}
+
+.language-switcher button:focus-visible {
+  outline: 2px solid var(--orange);
+  outline-offset: -2px;
+}
+
 .chip {
   background: rgba(255, 255, 255, .62);
   border-color: var(--line);
@@ -145,9 +187,35 @@ footer { color: var(--muted); }
 }
 
 @media (max-width: 600px) {
-  .nav { height: auto; min-height: 74px; padding: 8px 0; }
+  .nav,
+  .portal-header,
+  .access-header,
+  .admin-header {
+    min-height: auto;
+    padding: 8px 0;
+  }
+
   .company-logo { width: 82px; height: 45px; }
   .company-name { max-width: 70px; font-size: 10px; }
-  .nav > div:last-child { gap: 6px !important; }
-  .nav > div:last-child .btn { padding: 10px 9px; font-size: 12px; }
+
+  .nav > div:last-child,
+  .portal-header > a:last-child,
+  .access-header > a:last-child,
+  .admin-header > a:last-child {
+    gap: 6px !important;
+    margin-left: auto;
+  }
+
+  .nav > div:last-child .btn,
+  .portal-header .btn,
+  .access-header .btn,
+  .admin-header .btn {
+    padding: 10px 12px;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  .language-switcher {
+    margin-left: 0;
+  }
 }

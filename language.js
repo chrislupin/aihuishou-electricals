@@ -132,11 +132,16 @@
   function addSwitcher() {
     const target = document.querySelector(".nav, .header, .portal-header, .access-header, .admin-header");
     if (!target || target.querySelector(".language-switcher")) return;
+
     const control = document.createElement("div");
     control.className = "language-switcher";
     control.setAttribute("aria-label", "Language selector");
     control.innerHTML = '<button type="button" data-language="en">EN</button><button type="button" data-language="zh">中文</button>';
+
     target.append(control);
+    target.style.gap = "10px";
+    target.style.flexWrap = "wrap";
+
     const applyLanguage = (language) => {
       localStorage.setItem(languageKey, language);
       translatePage(language);
