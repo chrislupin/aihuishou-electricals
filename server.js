@@ -62,11 +62,28 @@ const agentAccessInvitesCollection = database?.collection("agent_access_invites"
 const accountantApplicationsCollection = database?.collection("accountant_applications");
 
 const adminEmail = normalizeConfiguredEmail(process.env.ADMIN_EMAIL);
+const configuredAppUrl = normalizeAppUrl(process.env.APP_URL);
+
+if (process.env.NODE_ENV === "production" && !configuredAppUrl) {
+  throw new Error("APP_URL must be a valid HTTPS URL in production.");
+}
 
 let databaseReady;
 
 function normalizeConfiguredEmail(email) {
   return typeof email === "string" ? email.trim().toLowerCase() : "";
+}
+
+function normalizeAppUrl(value) {
+  if (typeof value !== "string" || !value.trim()) return "";
+  try {
+    const url = new URL(value.trim());
+    return url.protocol === "https:" && url.username === "" && url.password === "" && url.pathname === "/" && !url.search && !url.hash
+      ? url.origin
+      : "";
+  } catch {
+    return "";
+  }
 }
 
 if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
@@ -113,9 +130,8 @@ app.use(
 
 app.use((req, res, next) => {
   if (process.env.NODE_ENV !== "production" || req.secure) return next();
-  const configuredUrl = typeof process.env.APP_URL === "string" ? process.env.APP_URL.trim().replace(/\/+$/, "") : "";
-  if (!configuredUrl.startsWith("https://")) return next();
-  return res.redirect(308, `${configuredUrl}${req.originalUrl}`);
+  if (!configuredAppUrl) return next();
+  return res.redirect(308, `${configuredAppUrl}${req.originalUrl}`);
 });
 
 app.use(
@@ -128,7 +144,45 @@ app.use("/data", (req, res) => {
   res.status(404).end();
 });
 
-app.use(express.static(path.join(__dirname)));
+const publicPageFiles = new Set([
+  "index.html",
+  "about.html",
+  "services.html",
+  "contact.html",
+  "agent-application.html",
+  "agent-login.html",
+  "agent-dashboard.html",
+  "field-employee-login.html",
+  "field-employee-dashboard.html",
+  "admin-login.html",
+  "admin-dashboard.html",
+  "admin-analysis.html",
+  "accountant-login.html",
+  "accountant-signup.html",
+  "password-reset.html"
+]);
+const publicAssetFiles = new Set(["styles.css", "script.js", "language.js"]);
+const publicImageFiles = new Set([
+  "company-logo.png",
+  "original.avif",
+  "electronic-waste.avif",
+  "electronic waste collection.png"
+]);
+
+app.get("/:page", (req, res, next) => {
+  if (publicAssetFiles.has(req.params.page)) {
+    return res.sendFile(path.join(__dirname, req.params.page));
+  }
+  if (publicPageFiles.has(req.params.page)) {
+    return res.sendFile(path.join(__dirname, req.params.page));
+  }
+  return next();
+});
+
+app.get("/images/:file", (req, res, next) => {
+  if (!publicImageFiles.has(req.params.file)) return next();
+  return res.sendFile(path.join(__dirname, "images", req.params.file));
+});
 
 // Serve the main website homepage
 app.get("/", (req, res) => {
@@ -138,7 +192,7 @@ app.get("/", (req, res) => {
 app.get("/robots.txt", (req, res) => {
   const host = req.get("host") || "";
   const isLocal = /^(localhost|127\.0\.0\.1|0\.0\.0\.0)/.test(host);
-  const baseUrl = process.env.APP_URL || (isLocal ? `http://${host}` : "https://aihuishouelectricalslimited.com");
+  const baseUrl = configuredAppUrl || (isLocal ? `http://${host}` : "https://aihuishouelectricalslimited.com");
   res.type("text/plain").send(
     "User-agent: *\n" +
     "Allow: /\n" +
@@ -161,7 +215,7 @@ app.get("/robots.txt", (req, res) => {
 app.get("/sitemap.xml", (req, res) => {
   const host = req.get("host") || "";
   const isLocal = /^(localhost|127\.0\.0\.1|0\.0\.0\.0)/.test(host);
-  const configuredBase = process.env.APP_URL || (isLocal ? `http://${host}` : "https://aihuishouelectricalslimited.com");
+  const configuredBase = configuredAppUrl || (isLocal ? `http://${host}` : "https://aihuishouelectricalslimited.com");
   const baseUrl = configuredBase.replace(/\/+$/, "");
   const publicUrls = [
     "/",
@@ -589,6 +643,10 @@ async function purgeNonAdminData() {
 
   if (process.env.ALLOW_NON_ADMIN_DATA_PURGE !== "true") {
     return;
+  }
+
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("ALLOW_NON_ADMIN_DATA_PURGE is not permitted in production.");
   }
 
   const adminFilter = adminEmail ? { email: { $ne: adminEmail } } : {};
@@ -1407,7 +1465,7 @@ app.post("/api/password-reset/request", authLimiter, async (req, res) => {
         expiresAt: new Date(Date.now() + 60 * 60 * 1000),
         createdAt: new Date()
       });
-      const baseUrl = process.env.APP_URL || `${req.protocol}://${req.get("host")}`;
+      const baseUrl = publicBaseUrl(req);
 
       try {
         await transporter.sendMail({
@@ -1477,7 +1535,8 @@ function applicationEmail(value) {
 }
 
 function publicBaseUrl(req) {
-  return (process.env.APP_URL || `${req.protocol}://${req.get("host")}`).replace(/\/+$/, "");
+  if (configuredAppUrl) return configuredAppUrl;
+  return `${req.protocol}://${req.get("host")}`.replace(/\/+$/, "");
 }
 
 async function sendApplicationNotification(application) {

@@ -99,6 +99,10 @@ async function request(path, options = {}) {
   return { response, body: text ? JSON.parse(text) : {} };
 }
 
+async function rawRequest(path, options = {}) {
+  return fetch(`http://127.0.0.1:${server.address().port}${path}`, options);
+}
+
 function cookie(response, name) {
   const value = response.headers.get("set-cookie") || "";
   const match = value.match(new RegExp(`${name}=([^;]+)`));
@@ -114,6 +118,17 @@ async function login(path, email, password, cookieName) {
 
 test.before(async () => new Promise((resolve) => server.listen(0, "127.0.0.1", resolve)));
 test.after(async () => new Promise((resolve) => server.close(resolve)));
+
+test("only approved browser files are publicly served", async () => {
+  let response = await rawRequest("/index.html");
+  assert.equal(response.status, 200);
+  response = await rawRequest("/images/company-logo.png");
+  assert.equal(response.status, 200);
+  response = await rawRequest("/server.js");
+  assert.equal(response.status, 404);
+  response = await rawRequest("/test/api.test.js");
+  assert.equal(response.status, 404);
+});
 
 test("admin approval and rejection update applications", async () => {
   const adminCookie = await login("/api/admin-login", "admin@example.com", "admin-password", "admin_session");
