@@ -2343,6 +2343,31 @@ app.put(
     const now = new Date().toISOString();
 
     try {
+      const currentTicket = withoutMongoId(await pickupRequestsCollection.findOne({
+        id: req.params.id,
+        agentEmail: req.agent.email,
+        requestType: allowedType,
+        status: "Rejected"
+      }));
+
+      if (!currentTicket) {
+        return res.status(409).json({ error: "This rejected ticket is no longer available to resubmit." });
+      }
+
+      // Keep a self-contained snapshot of the rejected version before the
+      // editable fields are replaced. This preserves the audit trail without
+      // combining records from separate tickets.
+      const previousVersion = {
+        version: (currentTicket.ticketRevisions?.length || 0) + 1,
+        savedAt: now,
+        status: currentTicket.status,
+        goods: currentTicket.goods || [],
+        totalAmount: currentTicket.totalAmount || 0,
+        notes: currentTicket.notes || "",
+        rejectedAt: currentTicket.rejectedAt || "",
+        rejectedBy: currentTicket.rejectedBy || "",
+        rejectionReason: currentTicket.rejectionReason || ""
+      };
       const result = await pickupRequestsCollection.updateOne(
         {
           id: req.params.id,
@@ -2363,6 +2388,9 @@ app.put(
             rejectedAt: "",
             rejectedBy: "",
             rejectionReason: ""
+          },
+          $push: {
+            ticketRevisions: previousVersion
           }
         }
       );

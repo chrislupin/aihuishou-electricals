@@ -155,15 +155,33 @@
         const badge = document.createElement('span'); badge.className = `badge${request.status === 'Approved' ? ' approved' : request.status === 'Rejected' ? ' rejected' : ''}`; badge.textContent = request.status || 'Pending approval';
         top.append(titleBlock, badge);
         const details = document.createElement('div'); details.className = 'details';
-        addRequestDetail(details, 'Employee / agent', agent.fullName || request.agentEmail || '—');
-        addRequestDetail(details, 'Goods and number', (request.goods || []).map((good) => `${good.name}: ${good.quantity}`).join(', ') || '—');
         if (pickup) {
+          addRequestDetail(details, 'Employee / agent', agent.fullName || request.agentEmail || '—');
+          addRequestDetail(details, 'Goods and number', (request.goods || []).map((good) => `${good.name}: ${good.quantity}`).join(', ') || '—');
           addRequestDetail(details, 'Requested pickup date', formatPickupDate(request.preferredDate || request.preferredTime));
           addRequestDetail(details, 'Location / notes', [request.location, request.notes].filter(Boolean).join(' · ') || '—');
         } else {
-          addRequestDetail(details, 'Combined total amount', formatAmount(requestTotal(request)), 'request-total');
+          addRequestDetail(details, 'Ticket ID', request.id);
+          addRequestDetail(details, 'Ticket type', requestName(request));
+          addRequestDetail(details, 'Employee / agent', agent.fullName || request.agentEmail || '—');
+          addRequestDetail(details, 'Email', request.agentEmail || agent.email || '—');
+          addRequestDetail(details, 'Phone', agent.phone || '—');
+          addRequestDetail(details, 'Company / location', [agent.company, agent.location].filter(Boolean).join(' · ') || '—');
+          addRequestDetail(details, 'Goods, quantity, unit price and line total', (request.goods || []).map((good) => {
+            const quantity = Number(good.quantity) || 0;
+            const unitPrice = Number(good.amount) || 0;
+            const lineTotal = Number.isFinite(Number(good.totalAmount)) ? Number(good.totalAmount) : quantity * unitPrice;
+            return `${good.name || 'Unnamed good'}: ${quantity} × KSh ${formatAmount(unitPrice)} = KSh ${formatAmount(lineTotal)}`;
+          }).join(' | ') || '—');
+          addRequestDetail(details, 'Combined total amount', `KSh ${formatAmount(requestTotal(request))}`, 'request-total');
           addRequestDetail(details, 'Notes', request.notes || '—');
-          if (request.status === 'Rejected' && request.rejectionReason) addRequestDetail(details, 'Rejection reason', request.rejectionReason);
+          addRequestDetail(details, 'Submitted / updated', [request.createdAt ? formatDate(request.createdAt) : '', request.updatedAt ? `Updated ${formatDate(request.updatedAt)}` : '', request.resubmittedAt ? `Resubmitted ${formatDate(request.resubmittedAt)}` : ''].filter(Boolean).join(' · ') || '—');
+          if (request.approvedAt) addRequestDetail(details, 'Approved', formatDate(request.approvedAt));
+          if (request.status === 'Rejected') {
+            addRequestDetail(details, 'Rejected', request.rejectedAt ? formatDate(request.rejectedAt) : '—');
+            addRequestDetail(details, 'Rejection reason', request.rejectionReason || 'No reason provided');
+          }
+          if (Array.isArray(request.ticketRevisions) && request.ticketRevisions.length) addRequestDetail(details, 'Previous versions retained', `${request.ticketRevisions.length}`);
         }
         const actions = document.createElement('div'); actions.className = 'actions';
 
@@ -276,7 +294,7 @@
       }
 
       function renderFiltersAndRequests() {
-        root.innerHTML = '<section class="filters"><label>Person <select id="person"><option value="">All employees and agents</option></select></label><label>Status <select id="status"><option value="all">All statuses</option><option value="Pending approval">Pending approval</option><option value="Approved">Approved</option><option value="Rejected">Rejected</option></select></label><label>From <input id="requestFrom" type="date" /></label><label>To <input id="requestTo" type="date" /></label></section>' + (viewName === 'overview' ? '<h2>Selected ticket summary</h2><div id="summary"></div><h2>Unapproved agent tickets</h2><div id="agents"></div><h2>Unapproved field employee tickets</h2><div id="fields"></div>' : '<p class="muted">Only approved items are displayed on this page.</p><div id="results"></div>');
+        root.innerHTML = '<section class="filters"><label>Person <select id="person"><option value="">All employees and agents</option></select></label><label>Status <select id="status"><option value="all">All statuses</option><option value="Pending approval">Pending approval</option><option value="Approved">Approved</option><option value="Rejected">Rejected</option></select></label><label>From <input id="requestFrom" type="date" /></label><label>To <input id="requestTo" type="date" /></label></section>' + (viewName === 'overview' ? '<h2>Selected ticket summary</h2><div id="summary"></div><h2>Unapproved agent tickets</h2><div id="agents"></div><h2>Unapproved field employee tickets</h2><div id="fields"></div>' : '<p class="muted">All agent and field employee tickets are shown. Use the filters to narrow the list.</p><div id="results"></div>');
         const personSelect = $('#person');
         accounts.forEach((account) => personSelect.add(new Option(`${account.fullName} — ${account.role === 'fieldEmployee' ? 'Field employee' : 'Agent'}`, account.email)));
         const statusSelect = $('#status');
@@ -445,7 +463,7 @@
           applications = applicationData.applications || [];
           if (viewName === 'approved-pickups') requests = requests.filter((request) => isPickupRequest(request) && request.status === 'Approved');
           if (viewName === 'approved-agents') requests = requests.filter((request) => isAgentTicket(request) && request.status === 'Approved');
-          if (viewName === 'approved-fields') requests = requests.filter((request) => isField(request) && request.status === 'Approved');
+          if (viewName === 'approved-fields') requests = requests.filter((request) => !isPickupRequest(request));
           if (viewName === 'accounts') renderAccounts();
           else if (viewName === 'applications') renderApplications();
           else if (viewName === 'pickup-dates') renderDateApprovals();
