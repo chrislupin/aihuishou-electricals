@@ -156,6 +156,29 @@ test("agent and field-employee sessions remain role-specific", async () => {
   assert.equal(result.response.status, 200);
 });
 
+test("admin creates accountant accounts but only accountants can approve tickets and pickup dates", async () => {
+  const adminCookie = await login("/api/admin-login", "admin@example.com", "admin-password", "admin_session");
+  let result = await request("/api/admin/accounts", {
+    method: "POST",
+    headers: { cookie: adminCookie, "content-type": "application/json" },
+    body: JSON.stringify({ role: "accountant", fullName: "A. Accountant", email: "accountant@example.com", password: "accountant-password" })
+  });
+  assert.equal(result.response.status, 201);
+  const accountantCookie = await login("/api/accountant-login", "accountant@example.com", "accountant-password", "accountant_session");
+  result = await request("/api/agent-login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: "accountant@example.com", password: "accountant-password" }) });
+  assert.equal(result.response.status, 401);
+  collection("pickup_requests").records.push({ id: "accountant-ticket", agentEmail: "owner@example.com", requestType: "agentTicket", status: "Pending approval", goods: [{ name: "LCDs", quantity: 1, amount: 10 }], createdAt: new Date().toISOString() });
+  result = await request("/api/admin/pickup-requests/accountant-ticket/approve", { method: "POST", headers: { cookie: adminCookie } });
+  assert.equal(result.response.status, 401);
+  result = await request("/api/admin/pickup-requests/accountant-ticket/approve", { method: "POST", headers: { cookie: accountantCookie } });
+  assert.equal(result.response.status, 200);
+  assert.equal((await collection("pickup_requests").findOne({ id: "accountant-ticket" })).approvedBy, "accountant@example.com");
+  collection("pickup_date_requests").records.push({ id: "accountant-date", agentEmail: "owner@example.com", requestedDate: businessDateKey(), status: "Pending approval", active: true, createdAt: new Date().toISOString() });
+  result = await request("/api/admin/pickup-date-requests/accountant-date/approve", { method: "POST", headers: { cookie: accountantCookie } });
+  assert.equal(result.response.status, 200);
+  assert.equal((await collection("pickup_date_requests").findOne({ id: "accountant-date" })).reviewedBy, "accountant@example.com");
+});
+
 test("ticket history keeps older rejected tickets actionable and report filters use Nairobi dates", async () => {
   const agent = passwordAccount("history@example.com", "history-password");
   const today = businessDateKey();
@@ -170,6 +193,6 @@ test("ticket history keeps older rejected tickets actionable and report filters 
   assert.deepEqual(result.body.olderRejectedTickets.map((item) => item.id), ["old-rejected"]);
 
   const adminCookie = await login("/api/admin-login", "admin@example.com", "admin-password", "admin_session");
-  result = await request(`/api/admin/pickup-requests?reportType=tickets&status=Approved&range=daily&from=${today}&to=${today}`, { headers: { cookie: adminCookie } });
+  result = await request(`/api/admin/pickup-requests?reportType=tickets&status=Approved&range=daily&from=${today}&to=${today}&person=${encodeURIComponent(agent.email)}`, { headers: { cookie: adminCookie } });
   assert.deepEqual(result.body.requests.map((item) => item.id), ["today-ticket"]);
 });

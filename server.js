@@ -145,6 +145,7 @@ app.get("/robots.txt", (req, res) => {
     "Disallow: /api/\n" +
     "Disallow: /password-reset.html\n" +
     "Disallow: /admin-login.html\n" +
+    "Disallow: /accountant-login.html\n" +
     "Disallow: /admin-dashboard.html\n" +
     "Disallow: /admin-analysis.html\n" +
     "Disallow: /agent-login.html\n" +
@@ -696,6 +697,12 @@ function createAdminSession(res) {
   createSignedSession(res, "admin_session", { admin: true });
 }
 
+function createAccountantSession(res, account) {
+  res.clearCookie("agent_session", { path: "/" });
+  res.clearCookie("field_employee_session", { path: "/" });
+  createSignedSession(res, "accountant_session", { email: account.email, role: "accountant" });
+}
+
 function requireAdmin(req, res, next) {
   const session = readSignedSession(req, "admin_session");
 
@@ -711,6 +718,37 @@ function requireAdmin(req, res, next) {
   return next();
 }
 
+async function getCurrentAccountant(req) {
+  const session = readSignedSession(req, "accountant_session");
+  if (!session || session.role !== "accountant" || session.expiresAt < Date.now()) return null;
+  const account = await getAccountByEmail(session.email);
+  return account?.role === "accountant" && account.accessStatus !== "disabled" ? account : null;
+}
+
+async function requireAccountant(req, res, next) {
+  try {
+    const account = await getCurrentAccountant(req);
+    if (!account) return res.status(401).json({ error: "Please sign in as an accountant." });
+    req.accountant = account;
+    return next();
+  } catch (error) {
+    console.error("Accountant session check failed:", error.message);
+    return res.status(500).json({ error: "Unable to verify your session. Please try again." });
+  }
+}
+
+async function requireOperationsViewer(req, res, next) {
+  const adminSession = readSignedSession(req, "admin_session");
+  if (adminSession?.admin && adminSession.expiresAt >= Date.now()) {
+    req.operationsRole = "admin";
+    return next();
+  }
+  return requireAccountant(req, res, () => {
+    req.operationsRole = "accountant";
+    return next();
+  });
+}
+
 async function getCurrentAgent(req) {
   const session = readSignedSession(req, "agent_session");
 
@@ -724,9 +762,11 @@ async function getCurrentAgent(req) {
 
   const account = await getAccountByEmail(session.email);
   // Older migrated agent records predate the role field. Anything that is
-  // not explicitly a field employee remains an agent for compatibility.
+  // not an explicitly separate operational role remains an agent for
+  // compatibility.
   return account &&
     account.role !== "fieldEmployee" &&
+    account.role !== "accountant" &&
     account.accessStatus !== "invited" &&
     account.accessStatus !== "disabled"
     ? account
@@ -880,6 +920,7 @@ app.post(
       if (
         !account ||
         account.role === "fieldEmployee" ||
+        account.role === "accountant" ||
         !account.salt ||
         !account.passwordHash
       ) {
@@ -1227,6 +1268,39 @@ app.post(
     res.status(204).end();
   }
 );
+
+app.post("/api/accountant-login", authLimiter, async (req, res) => {
+  const email = normalizeEmail(req.body?.email);
+  const password = req.body?.password;
+  if (!email || !isValidPassword(password)) {
+    return res.status(400).json({ error: "Email and password are required." });
+  }
+  try {
+    const account = await getAccountByEmail(email);
+    if (!account || account.role !== "accountant" || account.accessStatus === "disabled" || !account.salt || !account.passwordHash) {
+      return res.status(401).json({ error: "Email or password is incorrect." });
+    }
+    const enteredHash = await scrypt(password, account.salt, 64);
+    const savedHash = Buffer.from(account.passwordHash, "hex");
+    if (savedHash.length !== enteredHash.length || !crypto.timingSafeEqual(savedHash, enteredHash)) {
+      return res.status(401).json({ error: "Email or password is incorrect." });
+    }
+    createAccountantSession(res, account);
+    return res.json({ accountant: { fullName: account.fullName, email: account.email } });
+  } catch (error) {
+    console.error("Accountant login failed:", error.message);
+    return res.status(500).json({ error: "Unable to sign in. Please try again." });
+  }
+});
+
+app.get("/api/accountant-session", requireAccountant, (req, res) => {
+  res.json({ accountant: { fullName: req.accountant.fullName, email: req.accountant.email } });
+});
+
+app.post("/api/accountant-logout", (req, res) => {
+  res.clearCookie("accountant_session", { path: "/" });
+  res.status(204).end();
+});
 
 app.post(
   "/api/admin-login",
@@ -1722,7 +1796,7 @@ app.post(
 
 app.get(
   "/api/admin/pickup-date-requests",
-  requireAdmin,
+  requireOperationsViewer,
   async (req, res) => {
     try {
       const [dateRequests, pickupRequests, accounts] = await Promise.all([
@@ -1768,7 +1842,7 @@ app.get(
 
 app.post(
   "/api/admin/pickup-date-requests/:id/approve",
-  requireAdmin,
+  requireAccountant,
   async (req, res) => {
     try {
       const result = await pickupDateRequestsCollection.updateOne(
@@ -1777,7 +1851,7 @@ app.post(
           $set: {
             status: "Approved",
             reviewedAt: new Date().toISOString(),
-            reviewedBy: adminEmail
+            reviewedBy: req.accountant.email
           }
         }
       );
@@ -1797,7 +1871,7 @@ app.post(
 
 app.post(
   "/api/admin/pickup-date-requests/:id/reject",
-  requireAdmin,
+  requireAccountant,
   async (req, res) => {
     const reason = typeof req.body?.reason === "string" ? req.body.reason.trim().slice(0, 500) : "";
     try {
@@ -1808,7 +1882,7 @@ app.post(
             status: "Rejected",
             active: false,
             reviewedAt: new Date().toISOString(),
-            reviewedBy: adminEmail,
+            reviewedBy: req.accountant.email,
             rejectionReason: reason
           }
         }
@@ -1826,7 +1900,7 @@ app.post(
 
 app.get(
   "/api/admin/pickup-requests",
-  requireAdmin,
+  requireOperationsViewer,
   async (req, res) => {
     try {
       const requests =
@@ -1932,7 +2006,7 @@ app.get("/api/admin/agent-applications", requireAdmin, async (req, res) => {
   }
 });
 
-app.get("/api/admin/pickup-requests/:id/revisions", requireAdmin, async (req, res) => {
+app.get("/api/admin/pickup-requests/:id/revisions", requireOperationsViewer, async (req, res) => {
   try {
     const revisions = await ticketRevisionsCollection.find(
       { ticketId: req.params.id },
@@ -2115,6 +2189,37 @@ app.get("/api/admin/accounts", requireAdmin, async (req, res) => {
   } catch (error) {
     console.error("Admin account lookup failed:", error.message);
     res.status(500).json({ error: "Unable to load accounts." });
+  }
+});
+
+app.post("/api/admin/accounts", requireAdmin, authLimiter, async (req, res) => {
+  const fullName = applicationField(req.body?.fullName, 160);
+  const email = applicationEmail(req.body?.email);
+  const password = req.body?.password;
+  const role = req.body?.role;
+  if (role !== "accountant" || !fullName || !email || !isValidPassword(password)) {
+    return res.status(400).json({ error: "Enter a name, accountant email and password of at least 8 characters." });
+  }
+  try {
+    if (await getAccountByEmail(email)) return res.status(409).json({ error: "An account with this email already exists." });
+    const salt = crypto.randomBytes(16).toString("hex");
+    const passwordHash = (await scrypt(password, salt, 64)).toString("hex");
+    const account = {
+      role: "accountant",
+      accessStatus: "active",
+      fullName,
+      email,
+      salt,
+      passwordHash,
+      createdAt: new Date().toISOString(),
+      createdBy: adminEmail
+    };
+    await accountsCollection.insertOne(account);
+    return res.status(201).json({ account: { role: account.role, fullName: account.fullName, email: account.email } });
+  } catch (error) {
+    if (error?.code === 11000) return res.status(409).json({ error: "An account with this email already exists." });
+    console.error("Accountant account creation failed:", error.message);
+    return res.status(500).json({ error: "Unable to create the accountant account." });
   }
 });
 
@@ -2347,7 +2452,7 @@ app.post(
 
 app.post(
   "/api/admin/pickup-requests/:id/approve",
-  requireAdmin,
+  requireAccountant,
   async (req, res) => {
     try {
       const request = withoutMongoId(await pickupRequestsCollection.findOne({ id: req.params.id }));
@@ -2367,7 +2472,7 @@ app.post(
       request.approvedAt = new Date().toISOString();
       const approval = await pickupRequestsCollection.updateOne(
         { id: request.id, status: "Pending approval" },
-        { $set: { status: request.status, approvedAt: request.approvedAt } }
+        { $set: { status: request.status, approvedAt: request.approvedAt, approvedBy: req.accountant.email } }
       );
       if (!approval.matchedCount) {
         return res.status(409).json({ error: "This request is no longer pending approval." });
@@ -2394,7 +2499,7 @@ app.post(
 
 app.post(
   "/api/admin/pickup-requests/:id/reject",
-  requireAdmin,
+  requireAccountant,
   async (req, res) => {
     const rejectionReason = typeof req.body?.reason === "string"
       ? req.body.reason.trim().slice(0, 500)
@@ -2414,7 +2519,7 @@ app.post(
           $set: {
             status: "Rejected",
             rejectedAt: new Date().toISOString(),
-            rejectedBy: adminEmail,
+            rejectedBy: req.accountant.email,
             rejectionReason
           }
         }

@@ -61,11 +61,11 @@
         <a href="admin-dashboard.html"><img src="images/company-logo.png" alt="Aihuishou Electricals" /></a>
         <nav class="nav">
           <a data-view="overview" href="admin-dashboard.html">Overview &amp; unapproved</a>
-          <a data-view="applications" href="admin-dashboard.html?view=applications">Agent applications</a>
+          <a class="admin-only" data-view="applications" href="admin-dashboard.html?view=applications">Agent applications</a>
           <a data-view="pickup-dates" href="admin-dashboard.html?view=pickup-dates">Pickup dates approval</a>
           <a data-view="approved-fields" href="admin-dashboard.html?view=approved-fields">Ticket Center</a>
-          <a data-view="accounts" href="admin-dashboard.html?view=accounts">Manage employees and agents</a>
-          <a href="admin-analysis.html">Analysis</a>
+          <a class="admin-only" data-view="accounts" href="admin-dashboard.html?view=accounts">Manage accounts</a>
+          <a class="admin-only" href="admin-analysis.html">Analysis</a>
         </nav>
       </aside>
       <section class="page">
@@ -81,7 +81,11 @@
     </main>
     <script>
       const $ = (selector) => document.querySelector(selector);
-      const viewName = new URLSearchParams(location.search).get('view') || 'overview';
+      const params = new URLSearchParams(location.search);
+      const portalRole = params.get('role') === 'accountant' ? 'accountant' : 'admin';
+      const canApprove = portalRole === 'accountant';
+      const viewName = params.get('view') || 'overview';
+      if (portalRole === 'accountant' && !['overview', 'pickup-dates', 'approved-fields'].includes(viewName)) location.replace('admin-dashboard.html?role=accountant');
       const root = $('#view');
       const titles = {
         overview: 'Requests & tickets inbox',
@@ -94,7 +98,16 @@
       let accounts = [];
       let applications = [];
 
-      $('#title').textContent = titles[viewName] || titles.overview;
+      if (portalRole === 'accountant') {
+        document.querySelectorAll('.admin-only').forEach((element) => element.remove());
+        document.querySelector('[data-view="overview"]').textContent = 'Overview & approvals';
+        document.querySelectorAll('.nav a[data-view]').forEach((link) => {
+          const linkParams = new URL(link.href).searchParams;
+          linkParams.set('role', 'accountant');
+          link.href = `admin-dashboard.html?${linkParams}`;
+        });
+      }
+      $('#title').textContent = portalRole === 'accountant' && viewName === 'overview' ? 'Accountant approvals' : (titles[viewName] || titles.overview);
       document.querySelector(`[data-view="${viewName}"]`)?.classList.add('active');
 
       const isField = (request) => request.requestType === 'fieldEmployee';
@@ -185,7 +198,7 @@
         }
         const actions = document.createElement('div'); actions.className = 'actions';
 
-        if (request.status === 'Pending approval') {
+        if (canApprove && request.status === 'Pending approval') {
           const approve = document.createElement('button');
           approve.className = 'btn';
           approve.type = 'button';
@@ -204,7 +217,7 @@
           actions.append(approve);
         }
 
-        if (!pickup && request.status === 'Pending approval') {
+        if (canApprove && !pickup && request.status === 'Pending approval') {
           const reject = document.createElement('button');
           reject.className = 'btn danger';
           reject.type = 'button';
@@ -338,7 +351,13 @@
       }
 
       function renderAccounts() {
-        root.innerHTML = '<p class="muted">Deleting an account permanently removes its login access. Existing request records are retained.</p><div id="accounts"></div>';
+        root.innerHTML = '<p class="muted">Create and manage agent, field employee and accountant accounts. Deleting an account permanently removes its login access; existing request records are retained.</p><section class="card"><h2>Create accountant account</h2><form id="createAccountant"><div class="filters"><label>Full name <input name="fullName" required maxlength="160" /></label><label>Email <input name="email" type="email" required /></label><label>Temporary password <input name="password" type="password" minlength="8" required /></label><button class="btn" type="submit">Create accountant</button></div><p class="muted" id="accountantCreateStatus"></p></form></section><div id="accounts"></div>';
+        document.getElementById('createAccountant').addEventListener('submit', async (event) => {
+          event.preventDefault(); const form = event.currentTarget; const status = $('#accountantCreateStatus'); const button = form.querySelector('button'); button.disabled = true; status.textContent = 'Creating accountant account…';
+          try { const response = await fetch('/api/admin/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...Object.fromEntries(new FormData(form).entries()), role: 'accountant' }) }); const result = await response.json().catch(() => ({})); if (!response.ok) throw new Error(result.error || 'Unable to create accountant account.'); form.reset(); status.textContent = 'Accountant account created.'; load(); }
+          catch (error) { status.textContent = error.message || 'Unable to create accountant account.'; }
+          finally { button.disabled = false; }
+        });
         const target = $('#accounts');
         if (!accounts.length) {
           showEmpty(target, 'No accounts have been created yet.');
@@ -352,7 +371,8 @@
           const meta = document.createElement('div');
           name.textContent = account.fullName;
           meta.className = 'muted';
-          meta.textContent = `${account.role === 'fieldEmployee' ? 'Field employee' : 'Agent'} · ${account.email}`;
+          const role = account.role === 'fieldEmployee' ? 'Field employee' : account.role === 'accountant' ? 'Accountant' : 'Agent';
+          meta.textContent = `${role} · ${account.email}`;
           details.append(name, meta);
           const remove = document.createElement('button');
           remove.className = 'btn danger';
@@ -466,13 +486,13 @@
         root.replaceChildren();
         const results = await Promise.allSettled([
           fetch('/api/admin/pickup-requests'),
-          fetch('/api/admin/accounts'),
-          fetch('/api/admin/agent-applications')
+          portalRole === 'admin' ? fetch('/api/admin/accounts') : Promise.resolve(null),
+          portalRole === 'admin' ? fetch('/api/admin/agent-applications') : Promise.resolve(null)
         ]);
-        const responses = results.filter((result) => result.status === 'fulfilled').map((result) => result.value);
-        if (responses.some((response) => response.status === 401)) return location.assign('admin-login.html');
+        const responses = results.filter((result) => result.status === 'fulfilled' && result.value).map((result) => result.value);
+        if (responses.some((response) => response.status === 401)) return location.assign(portalRole === 'accountant' ? 'accountant-login.html' : 'admin-login.html');
         const read = async (result, label) => {
-          if (result.status === 'rejected') throw new Error(`Unable to load ${label}.`);
+          if (result.status === 'rejected' || !result.value) throw new Error(`Unable to load ${label}.`);
           const data = await result.value.json().catch(() => ({}));
           if (!result.value.ok) throw new Error(data.error || `Unable to load ${label}.`);
           return data;
@@ -498,8 +518,8 @@
 
       $('#refresh').addEventListener('click', load);
       $('#logout').addEventListener('click', async () => {
-        await fetch('/api/admin-logout', { method: 'POST' });
-        location.assign('admin-login.html');
+        await fetch(portalRole === 'accountant' ? '/api/accountant-logout' : '/api/admin-logout', { method: 'POST' });
+        location.assign(portalRole === 'accountant' ? 'accountant-login.html' : 'admin-login.html');
       });
       load();
     </script>
