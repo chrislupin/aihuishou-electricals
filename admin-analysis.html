@@ -66,11 +66,11 @@
       <aside class="side">
           <a href="admin-dashboard.html"><img src="images/company-logo.png" alt="Aihuishou Electricals" /></a>
         <nav class="nav">
-          <a href="admin-dashboard.html">Overview &amp; unapproved</a>
-          <a href="admin-dashboard.html?view=applications">Agent applications</a>
-          <a href="admin-dashboard.html?view=pickup-dates">Pickup dates approval</a>
-          <a href="admin-dashboard.html?view=approved-fields">Ticket Center</a>
-          <a href="admin-dashboard.html?view=accounts">Manage employees and agents</a>
+          <a data-view="overview" href="admin-dashboard.html">Overview &amp; unapproved</a>
+          <a class="admin-only" data-view="applications" href="admin-dashboard.html?view=applications">Agent applications</a>
+          <a data-view="pickup-dates" href="admin-dashboard.html?view=pickup-dates">Pickup dates approval</a>
+          <a data-view="approved-fields" href="admin-dashboard.html?view=approved-fields">Ticket Center</a>
+          <a class="admin-only" data-view="accounts" href="admin-dashboard.html?view=accounts">Manage employees and agents</a>
           <a class="active" href="admin-analysis.html">Analysis</a>
         </nav>
       </aside>
@@ -133,12 +133,24 @@
     </main>
     <script>
       const $ = (selector) => document.querySelector(selector);
+      const portalRole = new URLSearchParams(location.search).get('role') === 'accountant' ? 'accountant' : 'admin';
       const controls = {
         reportType: $('#reportType'), search: $('#search'), person: $('#person'), role: $('#role'), status: $('#status'),
         range: $('#range'), from: $('#from'), to: $('#to'), fromWrap: $('#fromWrap'), toWrap: $('#toWrap')
       };
       let requests = [];
       let accounts = [];
+
+      if (portalRole === 'accountant') {
+        document.querySelectorAll('.admin-only').forEach((element) => element.remove());
+        document.querySelector('[data-view="overview"]').textContent = 'Overview & approved';
+        document.querySelectorAll('.nav a[data-view]').forEach((link) => {
+          const linkParams = new URL(link.href).searchParams;
+          linkParams.set('role', 'accountant');
+          link.href = `admin-dashboard.html?${linkParams}`;
+        });
+        document.querySelector('.eyebrow').textContent = 'Accountant analysis';
+      }
 
       const formatDate = (value) => new Intl.DateTimeFormat('en-KE', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
       const formatCurrency = (value) => `KSh ${Number(value || 0).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -339,7 +351,7 @@
         setTimeout(() => URL.revokeObjectURL(url), 0);
       }
 
-      function generateReport() {
+      async function generateReport() {
         const status = $('#reportStatus');
         const button = $('#generateReport');
         const items = filteredRequests();
@@ -350,6 +362,15 @@
         button.disabled = true;
         status.textContent = 'Preparing your report…';
         try {
+          const auditResponse = await fetch('/api/operations/report-exports', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reportType: controls.reportType.value, range: controls.range.value, count: items.length })
+          });
+          if (!auditResponse.ok) {
+            const result = await auditResponse.json().catch(() => ({}));
+            throw new Error(result.error || 'Unable to record this report export.');
+          }
           downloadReport(items);
           status.textContent = `Downloaded ${items.length.toLocaleString('en-KE')} ${selectedNoun()}${items.length === 1 ? '' : 's'} using the current filters.`;
         } catch (error) {
@@ -424,7 +445,7 @@
         if (controls.to.value) params.set('to', controls.to.value);
         try {
           const response = await fetch(`/api/admin/pickup-requests?${params}`);
-          if (response.status === 401) return location.assign('admin-login.html');
+          if (response.status === 401) return location.assign(portalRole === 'accountant' ? 'accountant-login.html' : 'admin-login.html');
           const data = await response.json();
           if (!response.ok) throw new Error(data.error || 'Unable to load the filtered report.');
           requests = data.requests || [];
@@ -436,14 +457,25 @@
 
       async function load() {
         try {
-          const [requestResponse, accountResponse] = await Promise.all([fetch('/api/admin/pickup-requests'), fetch('/api/admin/accounts')]);
-          if (requestResponse.status === 401 || accountResponse.status === 401) return location.assign('admin-login.html');
+          const sessionResponse = await fetch(portalRole === 'accountant' ? '/api/accountant-session' : '/api/admin-session');
+          if (!sessionResponse.ok) {
+            const alternateSession = await fetch(portalRole === 'accountant' ? '/api/admin-session' : '/api/accountant-session').catch(() => null);
+            if (alternateSession?.ok) return location.replace(portalRole === 'accountant' ? 'admin-analysis.html' : 'admin-analysis.html?role=accountant');
+            return location.assign(portalRole === 'accountant' ? 'accountant-login.html' : 'admin-login.html');
+          }
+          const [requestResponse, accountResponse] = await Promise.all([
+            fetch('/api/admin/pickup-requests'),
+            portalRole === 'admin' ? fetch('/api/admin/accounts') : Promise.resolve(null)
+          ]);
+          if (requestResponse.status === 401 || accountResponse?.status === 401) return location.assign(portalRole === 'accountant' ? 'accountant-login.html' : 'admin-login.html');
           const requestData = await requestResponse.json();
-          const accountData = await accountResponse.json();
           if (!requestResponse.ok) throw new Error(requestData.error || 'Unable to load pickup requests.');
-          if (!accountResponse.ok) throw new Error(accountData.error || 'Unable to load employee accounts.');
           requests = requestData.requests || [];
-          accounts = accountData.accounts || [];
+          if (accountResponse) {
+            const accountData = await accountResponse.json();
+            if (!accountResponse.ok) throw new Error(accountData.error || 'Unable to load employee accounts.');
+            accounts = accountData.accounts || [];
+          }
           populatePeople();
           updateReportType();
         } catch (error) {
@@ -457,7 +489,7 @@
       controls.range.addEventListener('change', () => { updateDateInputs(); refreshReportRequests(); });
       $('#clear').addEventListener('click', clearFilters);
       $('#generateReport').addEventListener('click', generateReport);
-      $('#logout').addEventListener('click', async () => { await fetch('/api/admin-logout', { method: 'POST' }); location.assign('admin-login.html'); });
+      $('#logout').addEventListener('click', async () => { await fetch(portalRole === 'accountant' ? '/api/accountant-logout' : '/api/admin-logout', { method: 'POST' }); location.assign(portalRole === 'accountant' ? 'accountant-login.html' : 'admin-login.html'); });
       load();
     </script>
   </body>

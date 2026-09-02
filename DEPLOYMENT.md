@@ -15,6 +15,7 @@ Configure these in Vercel Project Settings → Environment Variables, never in G
 - `MONGODB_DB=aihuishou` (or your chosen database name)
 - `SESSION_SECRET`: a unique, random value of at least 32 characters; required for the stateless login cookies
 - `APP_URL`: the production public URL, used in password-reset and approved-agent access emails
+- `TRUST_PROXY_HOPS=1`: required when deploying behind Vercel's single trusted proxy; set `0` only for a direct HTTPS deployment
 - `SMTP_HOST=smtp.gmail.com`
 - `SMTP_PORT=587`
 - `SMTP_SECURE=false`
@@ -36,7 +37,7 @@ Never deploy the local `.env` file.
 2. Import the repository into Vercel and add every required Production environment variable.
 3. Deploy, then add the public domain and (if used) the admin subdomain to that Vercel project. Set `APP_URL` to the public production domain and redeploy after changing it.
 4. Confirm `https://your-domain/health` returns `{"status":"ok","database":"connected"}`.
-5. Test agent application submission, admin approval and rejection emails, the approved-agent password-setup link, field employee signup, pickup submission, admin login, account deletion, filtering, and password reset.
+5. Test agent application submission, admin approval and rejection emails, the approved-agent password-setup link, field employee signup, pickup submission, admin login, account disable/re-enable, filtering, report export audit logging, and password reset.
 6. Rotate any credentials used during local testing.
 
 ## Local production-like run

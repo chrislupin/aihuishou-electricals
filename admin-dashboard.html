@@ -65,7 +65,7 @@
           <a data-view="pickup-dates" href="admin-dashboard.html?view=pickup-dates">Pickup dates approval</a>
           <a data-view="approved-fields" href="admin-dashboard.html?view=approved-fields">Ticket Center</a>
           <a class="admin-only" data-view="accounts" href="admin-dashboard.html?view=accounts">Manage accounts</a>
-          <a class="admin-only" href="admin-analysis.html">Analysis</a>
+          <a data-view="analysis" href="admin-analysis.html">Analysis</a>
         </nav>
       </aside>
       <section class="page">
@@ -104,6 +104,10 @@
         document.querySelectorAll('.admin-only').forEach((element) => element.remove());
         document.querySelector('[data-view="overview"]').textContent = 'Overview & approved';
         document.querySelectorAll('.nav a[data-view]').forEach((link) => {
+          if (link.dataset.view === 'analysis') {
+            link.href = 'admin-analysis.html?role=accountant';
+            return;
+          }
           const linkParams = new URL(link.href).searchParams;
           linkParams.set('role', 'accountant');
           link.href = `admin-dashboard.html?${linkParams}`;
@@ -472,23 +476,25 @@
           name.textContent = account.fullName;
           meta.className = 'muted';
           const role = account.role === 'fieldEmployee' ? 'Field employee' : account.role === 'accountant' ? 'Accountant' : 'Agent';
-          meta.textContent = `${role} · ${account.email}`;
+          meta.textContent = `${role} · ${account.email}${account.accessStatus === 'disabled' ? ' · Disabled' : ''}`;
           details.append(name, meta);
-          const remove = document.createElement('button');
-          remove.className = 'btn danger';
-          remove.type = 'button';
-          remove.textContent = 'Delete account';
-          remove.addEventListener('click', async () => {
-            if (!confirm(`Delete ${account.fullName}'s account? This cannot be undone.`)) return;
-            const response = await fetch(`/api/admin/accounts/${encodeURIComponent(account.email)}`, { method: 'DELETE' });
+          const access = document.createElement('button');
+          const disabled = account.accessStatus === 'disabled';
+          access.className = `btn${disabled ? '' : ' danger'}`;
+          access.type = 'button';
+          access.textContent = disabled ? 'Enable account' : 'Disable account';
+          access.addEventListener('click', async () => {
+            const action = disabled ? 'enable' : 'disable';
+            if (!confirm(`${disabled ? 'Enable' : 'Disable'} ${account.fullName}'s account?${disabled ? '' : ' Their active sessions and recovery links will be revoked.'}`)) return;
+            const response = await fetch(`/api/admin/accounts/${encodeURIComponent(account.email)}/${action}`, { method: 'POST' });
             if (!response.ok) {
               const result = await response.json().catch(() => ({}));
-              alert(result.error || 'Unable to delete this account.');
+              alert(result.error || `Unable to ${action} this account.`);
               return;
             }
             load();
           });
-          card.append(details, remove);
+          card.append(details, access);
           target.append(card);
         });
       }

@@ -53,8 +53,12 @@ class Collection {
   async countDocuments(query = {}) { return this.records.filter((record) => matches(record, query)).length; }
   async createIndex() { return "index"; }
   aggregate() { return new Cursor([]); }
-  async updateOne(query, update) {
-    const record = this.records.find((item) => matches(item, query));
+  async updateOne(query, update, options = {}) {
+    let record = this.records.find((item) => matches(item, query));
+    if (!record && options.upsert) {
+      record = Object.fromEntries(Object.entries(query).filter(([, value]) => !value || typeof value !== "object" || Array.isArray(value)));
+      this.records.push(record);
+    }
     if (!record) return { matchedCount: 0, modifiedCount: 0 };
     Object.assign(record, clone(update.$set || {}));
     Object.keys(update.$unset || {}).forEach((key) => delete record[key]);
@@ -187,6 +191,8 @@ test("admin creates accountant accounts but only accountants can approve tickets
   assert.equal(result.response.status, 401);
   result = await request("/api/admin/accounts", { headers: { cookie: accountantCookie } });
   assert.equal(result.response.status, 401);
+  result = await request("/api/admin/pickup-requests", { headers: { cookie: accountantCookie } });
+  assert.equal(result.response.status, 200);
   result = await request("/api/admin/pickup-requests", { headers: { cookie: adminCookie } });
   assert.equal(result.response.status, 200);
   collection("pickup_requests").records.push({ id: "accountant-ticket", agentEmail: "owner@example.com", requestType: "agentTicket", status: "Pending approval", goods: [{ name: "LCDs", quantity: 1, amount: 10 }], createdAt: new Date().toISOString() });
@@ -241,6 +247,56 @@ test("accountant registration needs admin approval and then supports password re
   });
   assert.equal(result.response.status, 200);
   assert.ok(await collection("password_resets").findOne({ email: "new-accountant@example.com" }));
+});
+
+test("disabling an account revokes its session, and exports and resets are audited", async () => {
+  const adminCookie = await login("/api/admin-login", "admin@example.com", "admin-password", "admin_session");
+  let result = await request("/api/admin/accounts", {
+    method: "POST",
+    headers: { cookie: adminCookie, "content-type": "application/json" },
+    body: JSON.stringify({ role: "accountant", fullName: "Revocable Accountant", email: "revocable@example.com", password: "initial-password" })
+  });
+  assert.equal(result.response.status, 201);
+
+  const oldCookie = await login("/api/accountant-login", "revocable@example.com", "initial-password", "accountant_session");
+  result = await request("/api/admin/accounts/revocable%40example.com/disable", { method: "POST", headers: { cookie: adminCookie } });
+  assert.equal(result.response.status, 200);
+  result = await request("/api/accountant-session", { headers: { cookie: oldCookie } });
+  assert.equal(result.response.status, 401);
+
+  result = await request("/api/admin/accounts/revocable%40example.com/enable", { method: "POST", headers: { cookie: adminCookie } });
+  assert.equal(result.response.status, 200);
+  const activeCookie = await login("/api/accountant-login", "revocable@example.com", "initial-password", "accountant_session");
+  result = await request("/api/operations/report-exports", {
+    method: "POST",
+    headers: { cookie: activeCookie, "content-type": "application/json" },
+    body: JSON.stringify({ reportType: "tickets", range: "monthly", count: 3 })
+  });
+  assert.equal(result.response.status, 204);
+
+  const token = "known-reset-token";
+  collection("password_resets").records.push({
+    email: "revocable@example.com",
+    tokenHash: crypto.createHash("sha256").update(token).digest("hex"),
+    expiresAt: new Date(Date.now() + 60_000),
+    createdAt: new Date()
+  });
+  result = await request("/api/password-reset/confirm", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: "revocable@example.com", token, password: "replacement-password" })
+  });
+  assert.equal(result.response.status, 200);
+  result = await request("/api/accountant-session", { headers: { cookie: activeCookie } });
+  assert.equal(result.response.status, 401);
+
+  result = await request("/api/admin/security-audit", { headers: { cookie: adminCookie } });
+  assert.equal(result.response.status, 200);
+  const actions = result.body.events.map((event) => event.action);
+  assert.ok(actions.includes("account.disabled"));
+  assert.ok(actions.includes("account.enabled"));
+  assert.ok(actions.includes("analysis_report.exported"));
+  assert.ok(actions.includes("password.reset"));
 });
 
 test("ticket history keeps older rejected tickets actionable and report filters use Nairobi dates", async () => {
