@@ -79,12 +79,16 @@
           <div>
             <p class="eyebrow">Operations analysis</p>
             <h1>Collection report</h1>
-            <p class="muted">Filter tickets, review employees and inspect quantities and values at a glance.</p>
+            <p class="muted">Switch between approved tickets and pickup requests, then review quantities and values at a glance.</p>
           </div>
           <button class="btn" id="logout" type="button">Log out</button>
         </header>
 
         <section class="filters" aria-label="Collection report filters">
+          <div class="filter">
+            <label for="reportType">Report type</label>
+            <select id="reportType"><option value="tickets">Tickets</option><option value="pickups">Pickup requests</option></select>
+          </div>
           <div class="filter filter-wide">
             <label for="search">Search</label>
             <input id="search" type="search" placeholder="Employee, email, good, location or note" />
@@ -99,7 +103,7 @@
           </div>
           <div class="filter">
             <label for="status">Status</label>
-            <select id="status"><option value="">All statuses</option><option value="Pending approval">Pending approval</option><option value="Approved">Approved</option></select>
+            <select id="status"><option value="Approved">Approved</option></select>
           </div>
           <div class="filter">
             <label for="range">Date range</label>
@@ -117,20 +121,20 @@
         </section>
 
         <section class="summary" aria-label="Filtered report totals">
-          <article class="metric"><span>Requests</span><strong id="requestCount">0</strong></article>
+          <article class="metric"><span id="requestLabel">Approved tickets</span><strong id="requestCount">0</strong></article>
           <article class="metric"><span>People represented</span><strong id="peopleCount">0</strong></article>
           <article class="metric"><span>Total quantity</span><strong id="quantityTotal">0</strong></article>
           <article class="metric"><span>Combined amount</span><strong id="amountTotal">KSh 0.00</strong><small class="metric-period" id="amountPeriod">All time</small></article>
         </section>
 
-        <div class="report-head"><h2>Detailed tickets</h2><div class="report-download"><button class="btn" id="generateReport" type="button">Generate &amp; download report</button><span class="count" id="resultCount"></span><p class="report-status" id="reportStatus" role="status" aria-live="polite"></p></div></div>
+        <div class="report-head"><h2 id="detailTitle">Detailed approved tickets</h2><div class="report-download"><button class="btn" id="generateReport" type="button">Generate &amp; download report</button><span class="count" id="resultCount"></span><p class="report-status" id="reportStatus" role="status" aria-live="polite"></p></div></div>
         <div id="results"></div>
       </section>
     </main>
     <script>
       const $ = (selector) => document.querySelector(selector);
       const controls = {
-        search: $('#search'), person: $('#person'), role: $('#role'), status: $('#status'),
+        reportType: $('#reportType'), search: $('#search'), person: $('#person'), role: $('#role'), status: $('#status'),
         range: $('#range'), from: $('#from'), to: $('#to'), fromWrap: $('#fromWrap'), toWrap: $('#toWrap')
       };
       let requests = [];
@@ -141,6 +145,10 @@
       const formatPickupDate = (value) => { if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return value || 'Flexible'; const date = new Date(`${value}T00:00:00`); return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat('en-KE', { dateStyle: 'medium' }).format(date); };
       const requestRole = (request) => request.requestType === 'fieldEmployee' ? 'fieldEmployee' : 'agent';
       const roleLabel = (request) => requestRole(request) === 'fieldEmployee' ? 'Field employee' : 'Agent';
+      const isTicket = (request) => request.requestType === 'fieldEmployee' || request.requestType === 'agentTicket';
+      const isPickup = (request) => !isTicket(request);
+      const selectedNoun = () => controls.reportType.value === 'tickets' ? 'ticket' : 'pickup request';
+      const selectedNounPlural = () => controls.reportType.value === 'tickets' ? 'tickets' : 'pickup requests';
       const lineTotal = (good) => {
         const saved = Number(good.totalAmount);
         if (Number.isFinite(saved)) return saved;
@@ -186,6 +194,8 @@
       function filteredRequests() {
         const query = controls.search.value.trim().toLocaleLowerCase();
         return requests.filter((request) => {
+          if (controls.reportType.value === 'tickets' && (!isTicket(request) || request.status !== 'Approved')) return false;
+          if (controls.reportType.value === 'pickups' && !isPickup(request)) return false;
           if (controls.person.value && request.agentEmail !== controls.person.value) return false;
           if (controls.role.value && requestRole(request) !== controls.role.value) return false;
           if (controls.status.value && request.status !== controls.status.value) return false;
@@ -197,6 +207,7 @@
       }
 
       function renderSummary(items) {
+        $('#requestLabel').textContent = controls.reportType.value === 'tickets' ? 'Approved tickets' : 'Pickup requests';
         $('#requestCount').textContent = items.length.toLocaleString('en-KE');
         $('#peopleCount').textContent = new Set(items.map((request) => request.agentEmail)).size.toLocaleString('en-KE');
         $('#quantityTotal').textContent = items.reduce((total, request) => total + requestQuantity(request), 0).toLocaleString('en-KE');
@@ -218,11 +229,12 @@
 
       function renderTable(items) {
         const target = $('#results');
-        $('#resultCount').textContent = `${items.length.toLocaleString('en-KE')} ticket${items.length === 1 ? '' : 's'} shown`;
+        $('#detailTitle').textContent = controls.reportType.value === 'tickets' ? 'Detailed approved tickets' : 'Detailed pickup requests';
+        $('#resultCount').textContent = `${items.length.toLocaleString('en-KE')} ${selectedNoun()}${items.length === 1 ? '' : 's'} shown`;
         if (!items.length) {
           const empty = document.createElement('div');
           empty.className = 'empty';
-          empty.textContent = 'No tickets match these filters.';
+          empty.textContent = `No ${selectedNounPlural()} match these filters.`;
           target.replaceChildren(empty);
           return;
         }
@@ -296,11 +308,12 @@
         const period = controls.range.value === 'custom'
           ? `${controls.from.value || 'start'}-to-${controls.to.value || 'today'}`
           : controls.range.value;
-        return `aihuishou-report-${role}-${period}`.replace(/[^a-z0-9-]+/gi, '-').toLowerCase() + '.csv';
+        return `aihuishou-${controls.reportType.value}-report-${role}-${period}`.replace(/[^a-z0-9-]+/gi, '-').toLowerCase() + '.csv';
       }
 
       function downloadReport(items) {
-        const rows = [['Name', 'Date', 'Good', 'Quantity', 'Line amount', 'Total amount']];
+        const rows = [['Report type', controls.reportType.value === 'tickets' ? 'Approved tickets' : 'Pickup requests'], [], ['Name', 'Date', 'Good', 'Quantity', 'Line amount', 'Total amount']];
+        const goodsTotals = new Map();
         let total = 0;
         items.forEach((request) => {
           const name = personName(request);
@@ -310,12 +323,24 @@
             rows.push([name, date, 'No goods recorded', '', '0.00', '']);
           } else {
             goods.forEach((good) => {
-              rows.push([name, date, good.name || 'Unnamed good', Number(good.quantity) || 0, csvAmount(lineTotal(good)), '']);
+              const goodName = good.name || 'Unnamed good';
+              const quantity = Number(good.quantity) || 0;
+              const amount = lineTotal(good);
+              rows.push([name, date, goodName, quantity, csvAmount(amount), '']);
+              const aggregate = goodsTotals.get(goodName) || { quantity: 0, amount: 0 };
+              aggregate.quantity += quantity;
+              aggregate.amount += amount;
+              goodsTotals.set(goodName, aggregate);
             });
           }
           total += requestTotal(request);
         });
         rows.push(['TOTAL AMOUNT', '', '', '', '', csvAmount(total)]);
+        rows.push([]);
+        rows.push(['TOTALS BY GOOD', '', 'Good', 'Total quantity', 'Total amount', '']);
+        [...goodsTotals.entries()].sort(([first], [second]) => first.localeCompare(second)).forEach(([name, totals]) => {
+          rows.push(['', '', name, totals.quantity, csvAmount(totals.amount), '']);
+        });
 
         const csv = '\uFEFF' + rows.map((row) => row.map(csvCell).join(',')).join('\r\n');
         const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
@@ -334,14 +359,14 @@
         const button = $('#generateReport');
         const items = filteredRequests();
         if (!items.length) {
-          status.textContent = 'No tickets match the current analysis filters.';
+          status.textContent = `No ${selectedNounPlural()} match the current analysis filters.`;
           return;
         }
         button.disabled = true;
         status.textContent = 'Preparing your report…';
         try {
           downloadReport(items);
-          status.textContent = `Downloaded ${items.length.toLocaleString('en-KE')} ticket${items.length === 1 ? '' : 's'} using the current filters.`;
+          status.textContent = `Downloaded ${items.length.toLocaleString('en-KE')} ${selectedNoun()}${items.length === 1 ? '' : 's'} using the current filters.`;
         } catch (error) {
           status.textContent = error.message || 'Unable to generate the report.';
         } finally {
@@ -362,6 +387,22 @@
         render();
       }
 
+      function updateReportType() {
+        if (controls.reportType.value === 'tickets') {
+          controls.status.replaceChildren(new Option('Approved only', 'Approved'));
+          controls.status.value = 'Approved';
+        } else {
+          controls.status.replaceChildren(
+            new Option('All statuses', ''),
+            new Option('Pending approval', 'Pending approval'),
+            new Option('Approved', 'Approved'),
+            new Option('Rejected', 'Rejected')
+          );
+        }
+        $('#reportStatus').textContent = '';
+        render();
+      }
+
       function populatePeople() {
         const known = new Map(accounts.map((account) => [account.email, account]));
         requests.forEach((request) => {
@@ -373,6 +414,7 @@
       }
 
       function clearFilters() {
+        controls.reportType.value = 'tickets';
         controls.search.value = '';
         controls.person.value = '';
         controls.role.value = '';
@@ -380,6 +422,7 @@
         controls.range.value = 'all';
         controls.from.value = '';
         controls.to.value = '';
+        updateReportType();
         updateDateInputs();
       }
 
@@ -391,12 +434,10 @@
           const accountData = await accountResponse.json();
           if (!requestResponse.ok) throw new Error(requestData.error || 'Unable to load pickup requests.');
           if (!accountResponse.ok) throw new Error(accountData.error || 'Unable to load employee accounts.');
-          // Pickup requests are scheduled and approved in their own workflow.
-          // Analysis reports only ticket goods and values.
-          requests = (requestData.requests || []).filter((request) => request.requestType === 'fieldEmployee' || request.requestType === 'agentTicket');
+          requests = requestData.requests || [];
           accounts = accountData.accounts || [];
           populatePeople();
-          render();
+          updateReportType();
         } catch (error) {
           $('#results').replaceChildren(Object.assign(document.createElement('div'), { className: 'empty', textContent: error.message || 'Unable to load the report.' }));
         }
@@ -404,6 +445,7 @@
 
       controls.search.addEventListener('input', render);
       [controls.person, controls.role, controls.status, controls.from, controls.to].forEach((control) => control.addEventListener('change', render));
+      controls.reportType.addEventListener('change', updateReportType);
       controls.range.addEventListener('change', updateDateInputs);
       $('#clear').addEventListener('click', clearFilters);
       $('#generateReport').addEventListener('click', generateReport);

@@ -152,7 +152,7 @@
         const title = document.createElement('h3'); title.textContent = requestName(request);
         const created = document.createElement('p'); created.className = 'muted'; created.textContent = formatDate(request.createdAt);
         titleBlock.append(title, created);
-        const badge = document.createElement('span'); badge.className = 'badge'; badge.textContent = request.status || 'Pending approval';
+        const badge = document.createElement('span'); badge.className = `badge${request.status === 'Approved' ? ' approved' : request.status === 'Rejected' ? ' rejected' : ''}`; badge.textContent = request.status || 'Pending approval';
         top.append(titleBlock, badge);
         const details = document.createElement('div'); details.className = 'details';
         addRequestDetail(details, 'Employee / agent', agent.fullName || request.agentEmail || '—');
@@ -163,10 +163,11 @@
         } else {
           addRequestDetail(details, 'Combined total amount', formatAmount(requestTotal(request)), 'request-total');
           addRequestDetail(details, 'Notes', request.notes || '—');
+          if (request.status === 'Rejected' && request.rejectionReason) addRequestDetail(details, 'Rejection reason', request.rejectionReason);
         }
         const actions = document.createElement('div'); actions.className = 'actions';
 
-        if (request.status !== 'Approved') {
+        if (request.status === 'Pending approval') {
           const approve = document.createElement('button');
           approve.className = 'btn';
           approve.type = 'button';
@@ -183,6 +184,31 @@
             load();
           });
           actions.append(approve);
+        }
+
+        if (!pickup && request.status === 'Pending approval') {
+          const reject = document.createElement('button');
+          reject.className = 'btn danger';
+          reject.type = 'button';
+          reject.textContent = 'Reject ticket';
+          reject.addEventListener('click', async () => {
+            const reason = prompt('Optional rejection reason for the ticket owner:');
+            if (reason === null) return;
+            reject.disabled = true;
+            const response = await fetch(`/api/admin/pickup-requests/${encodeURIComponent(request.id)}/reject`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ reason })
+            });
+            if (!response.ok) {
+              const result = await response.json().catch(() => ({}));
+              alert(result.error || 'Unable to reject this ticket.');
+              reject.disabled = false;
+              return;
+            }
+            load();
+          });
+          actions.append(reject);
         }
 
         card.append(top, details, actions);
@@ -250,7 +276,7 @@
       }
 
       function renderFiltersAndRequests() {
-        root.innerHTML = '<section class="filters"><label>Person <select id="person"><option value="">All employees and agents</option></select></label><label>Status <select id="status"><option value="all">All statuses</option><option value="Pending approval">Pending approval</option><option value="Approved">Approved</option></select></label><label>From <input id="requestFrom" type="date" /></label><label>To <input id="requestTo" type="date" /></label></section>' + (viewName === 'overview' ? '<h2>Selected ticket summary</h2><div id="summary"></div><h2>Unapproved agent tickets</h2><div id="agents"></div><h2>Unapproved field employee tickets</h2><div id="fields"></div>' : '<p class="muted">Only approved items are displayed on this page.</p><div id="results"></div>');
+        root.innerHTML = '<section class="filters"><label>Person <select id="person"><option value="">All employees and agents</option></select></label><label>Status <select id="status"><option value="all">All statuses</option><option value="Pending approval">Pending approval</option><option value="Approved">Approved</option><option value="Rejected">Rejected</option></select></label><label>From <input id="requestFrom" type="date" /></label><label>To <input id="requestTo" type="date" /></label></section>' + (viewName === 'overview' ? '<h2>Selected ticket summary</h2><div id="summary"></div><h2>Unapproved agent tickets</h2><div id="agents"></div><h2>Unapproved field employee tickets</h2><div id="fields"></div>' : '<p class="muted">Only approved items are displayed on this page.</p><div id="results"></div>');
         const personSelect = $('#person');
         accounts.forEach((account) => personSelect.add(new Option(`${account.fullName} — ${account.role === 'fieldEmployee' ? 'Field employee' : 'Agent'}`, account.email)));
         const statusSelect = $('#status');

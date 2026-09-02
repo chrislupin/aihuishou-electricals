@@ -2227,13 +2227,18 @@ app.post(
         });
       }
 
-      if (
-        request.status !==
-        "Approved"
-      ) {
-        request.status = "Approved";
-        request.approvedAt = new Date().toISOString();
-        await pickupRequestsCollection.updateOne({ id: request.id }, { $set: { status: request.status, approvedAt: request.approvedAt } });
+      if (request.status !== "Pending approval") {
+        return res.status(409).json({ error: "Only pending requests can be approved." });
+      }
+
+      request.status = "Approved";
+      request.approvedAt = new Date().toISOString();
+      const approval = await pickupRequestsCollection.updateOne(
+        { id: request.id, status: "Pending approval" },
+        { $set: { status: request.status, approvedAt: request.approvedAt } }
+      );
+      if (!approval.matchedCount) {
+        return res.status(409).json({ error: "This request is no longer pending approval." });
       }
 
       return res.json({
@@ -2251,6 +2256,125 @@ app.post(
         error:
           "Unable to approve pickup request."
       });
+    }
+  }
+);
+
+app.post(
+  "/api/admin/pickup-requests/:id/reject",
+  requireAdmin,
+  async (req, res) => {
+    const rejectionReason = typeof req.body?.reason === "string"
+      ? req.body.reason.trim().slice(0, 500)
+      : "";
+
+    try {
+      // Pickup requests have their own scheduling workflow. This action is
+      // deliberately limited to operational tickets submitted by agents and
+      // field employees.
+      const result = await pickupRequestsCollection.updateOne(
+        {
+          id: req.params.id,
+          requestType: { $in: ["agentTicket", "fieldEmployee"] },
+          status: "Pending approval"
+        },
+        {
+          $set: {
+            status: "Rejected",
+            rejectedAt: new Date().toISOString(),
+            rejectedBy: adminEmail,
+            rejectionReason
+          }
+        }
+      );
+
+      if (!result.matchedCount) {
+        return res.status(409).json({ error: "Only pending tickets can be rejected." });
+      }
+
+      return res.json({ message: "Ticket rejected. Its owner can edit and resubmit it." });
+    } catch (error) {
+      console.error("Ticket rejection failed:", error.message);
+      return res.status(500).json({ error: "Unable to reject ticket." });
+    }
+  }
+);
+
+app.put(
+  "/api/pickup-requests/:id/resubmit",
+  requestLimiter,
+  requirePickupUser,
+  async (req, res) => {
+    const isFieldEmployee = req.requestUserType === "fieldEmployee";
+    const allowedType = isFieldEmployee ? "fieldEmployee" : "agentTicket";
+    const { goods, notes } = req.body || {};
+    const cleanNotes = applicationField(notes || "", 1000);
+    const invalidNotes = (typeof notes !== "undefined" && typeof notes !== "string")
+      || (typeof notes === "string" && notes.trim() && !cleanNotes);
+    const validGoods = Array.isArray(goods) && goods.length > 0 && goods.every((item) =>
+      item
+      && typeof item.name === "string"
+      && GOODS_OPTIONS.has(item.name.trim())
+      && (typeof item.quantity === "number" || typeof item.quantity === "string")
+      && String(item.quantity).trim()
+      && Number.isSafeInteger(Number(item.quantity))
+      && Number(item.quantity) >= 1
+      && (typeof item.amount === "number" || typeof item.amount === "string")
+      && String(item.amount).trim()
+      && Number.isFinite(Number(item.amount))
+      && Number(item.amount) >= 0
+    );
+
+    if (!validGoods) {
+      return res.status(400).json({
+        error: "Add at least one good with a category, whole-number quantity, and valid amount per item."
+      });
+    }
+    if (invalidNotes) {
+      return res.status(400).json({ error: "Notes must be plain text and no longer than 1,000 characters." });
+    }
+
+    const cleanedGoods = goods.map((item) => ({
+      name: item.name.trim(),
+      quantity: Number(item.quantity),
+      amount: Number(item.amount),
+      totalAmount: Number(item.amount) * Number(item.quantity)
+    }));
+    const now = new Date().toISOString();
+
+    try {
+      const result = await pickupRequestsCollection.updateOne(
+        {
+          id: req.params.id,
+          agentEmail: req.agent.email,
+          requestType: allowedType,
+          status: "Rejected"
+        },
+        {
+          $set: {
+            goods: cleanedGoods,
+            totalAmount: calculateRequestTotal(cleanedGoods),
+            notes: cleanNotes,
+            status: "Pending approval",
+            resubmittedAt: now,
+            updatedAt: now
+          },
+          $unset: {
+            rejectedAt: "",
+            rejectedBy: "",
+            rejectionReason: ""
+          }
+        }
+      );
+
+      if (!result.matchedCount) {
+        return res.status(409).json({ error: "This rejected ticket is no longer available to resubmit." });
+      }
+
+      return res.json({ message: "Ticket updated and resubmitted for admin approval." });
+    } catch (error) {
+      console.error("Ticket resubmission failed:", error.message);
+      return res.status(500).json({ error: "Unable to resubmit ticket." });
     }
   }
 );
