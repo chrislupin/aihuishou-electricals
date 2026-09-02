@@ -31,8 +31,9 @@ const app = express();
 const emailTo = "aihuishoulimited@gmail.com";
 const scrypt = promisify(crypto.scrypt);
 const sessionSecret = process.env.SESSION_SECRET || (process.env.NODE_ENV === "production" ? "" : crypto.randomBytes(32).toString("hex"));
-const GOODS_OPTIONS = new Set(['512GB','256GB','128GB','64GB','32GB','16GB','8GB','4GB','CHINESE','TABLET','BIGSMART','IPHONE','CPU','DISPLAY CARDS','BATTERY','HARD DISK','HARD DISK BOARD','RAMS','CAMERA','LAPTOP BOARD','LAPTOP LOW GRADE','ORIGINAL PHONES','COMPUTER 1 ICE','COMPUTER 2 ICE','GREEN BOARD HIGH GRADE','RUBBISH','RUBBISH HIGH GRADE','PRINTERS','CAR BOARD']);
+const GOODS_OPTIONS = new Set(['LCDs','Yellow Boards','512GB','256GB','128GB','64GB','32GB','16GB','8GB','4GB','CHINESE','TABLET','BIGSMART','IPHONE','CPU','DISPLAY CARDS','BATTERY','HARD DISK','HARD DISK BOARD','RAMS','CAMERA','LAPTOP BOARD','LAPTOP LOW GRADE','ORIGINAL PHONES','COMPUTER 1 ICE','COMPUTER 2 ICE','GREEN BOARD HIGH GRADE','RUBBISH','RUBBISH HIGH GRADE','PRINTERS','CAR BOARD']);
 const MAX_PASSWORD_LENGTH = 256;
+const BUSINESS_TIMEZONE = "Africa/Nairobi";
 
 let mongoClient = null;
 
@@ -52,6 +53,7 @@ const database = mongoClient?.db(process.env.MONGODB_DB || "aihuishou");
 
 const accountsCollection = database?.collection("agent_accounts");
 const pickupRequestsCollection = database?.collection("pickup_requests");
+const ticketRevisionsCollection = database?.collection("ticket_revisions");
 const pickupDateRequestsCollection = database?.collection("pickup_date_requests");
 const passwordResetCollection = database?.collection("password_resets");
 const adminAccountsCollection = database?.collection("admin_accounts");
@@ -231,11 +233,57 @@ function isValidPassword(password) {
   return typeof password === "string" && password.length >= 8 && password.length <= MAX_PASSWORD_LENGTH;
 }
 
+function businessDateKey(value = new Date()) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: BUSINESS_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(date);
+  const byType = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${byType.year}-${byType.month}-${byType.day}`;
+}
+
+function isBusinessToday(value) {
+  return businessDateKey(value) === businessDateKey();
+}
+
+function businessWeekStartKey(value = new Date()) {
+  const key = businessDateKey(value);
+  if (!key) return "";
+  const date = new Date(`${key}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() - ((date.getUTCDay() + 6) % 7));
+  return date.toISOString().slice(0, 10);
+}
+
+function matchesAdminReportDate(createdAt, range, from, to) {
+  const key = businessDateKey(createdAt);
+  if (!key) return false;
+  if (range === "daily") return key === businessDateKey();
+  if (range === "weekly") return key >= businessWeekStartKey() && key <= businessDateKey();
+  if (range === "monthly") return key.slice(0, 7) === businessDateKey().slice(0, 7);
+  if (range === "yearly") return key.slice(0, 4) === businessDateKey().slice(0, 4);
+  if (range === "custom") return (!from || key >= from) && (!to || key <= to);
+  return true;
+}
+
+function isSafeCustomGoodName(value) {
+  const name = typeof value === "string" ? value.trim() : "";
+  return name.length >= 2
+    && name.length <= 80
+    && name.toLocaleLowerCase() !== "other"
+    && /^[\p{L}\p{N}][\p{L}\p{N}\s&/().,'+-]*$/u.test(name);
+}
+
+function isAcceptedGoodName(value) {
+  return typeof value === "string" && (GOODS_OPTIONS.has(value.trim()) || isSafeCustomGoodName(value));
+}
+
 function isValidDateNotInPast(value) {
   if (!isValidDateOnly(value)) return false;
-  const today = new Date();
-  const localToday = [today.getFullYear(), String(today.getMonth() + 1).padStart(2, "0"), String(today.getDate()).padStart(2, "0")].join("-");
-  return value >= localToday;
+  return value >= businessDateKey();
 }
 
 function constantTimeStringEquals(first, second) {
@@ -468,6 +516,48 @@ async function migrateJsonData() {
   });
 }
 
+// Revisions used to be appended to the ticket document. Move the legacy
+// snapshots out once so an actively revised ticket can never grow past
+// MongoDB's document-size limit.
+async function migrateTicketRevisions() {
+  if (!database || await database.collection("migrations").findOne({ name: "ticket-revisions-v1" })) {
+    return;
+  }
+
+  const tickets = await pickupRequestsCollection.find({ ticketRevisions: { $type: "array" } }).toArray();
+  for (const ticket of tickets) {
+    const revisions = Array.isArray(ticket.ticketRevisions) ? ticket.ticketRevisions : [];
+    if (revisions.length) {
+      const records = revisions.map((revision, index) => ({
+        id: `legacy-${ticket.id}-${index + 1}`,
+        ticketId: ticket.id,
+        version: Number.isSafeInteger(Number(revision.version)) ? Number(revision.version) : index + 1,
+        savedAt: revision.savedAt || ticket.updatedAt || ticket.createdAt || new Date().toISOString(),
+        status: revision.status || "Rejected",
+        goods: revision.goods || [],
+        totalAmount: Number(revision.totalAmount) || 0,
+        notes: revision.notes || "",
+        rejectedAt: revision.rejectedAt || "",
+        rejectedBy: revision.rejectedBy || "",
+        rejectionReason: revision.rejectionReason || ""
+      }));
+      try {
+        await ticketRevisionsCollection.insertMany(records, { ordered: false });
+      } catch (error) {
+        // Re-running an interrupted migration is safe: the unique key below
+        // rejects a revision that was already copied.
+        if (error?.code !== 11000 && !error?.writeErrors?.every((item) => item.code === 11000)) throw error;
+      }
+    }
+    await pickupRequestsCollection.updateOne(
+      { _id: ticket._id },
+      { $set: { revisionCount: revisions.length }, $unset: { ticketRevisions: "" } }
+    );
+  }
+
+  await database.collection("migrations").insertOne({ name: "ticket-revisions-v1", migratedAt: new Date() });
+}
+
 async function removeDuplicateAccounts() {
   const duplicateGroups = await accountsCollection.aggregate([
     { $match: { email: { $type: "string" } } },
@@ -503,6 +593,7 @@ async function purgeNonAdminData() {
   await Promise.all([
     accountsCollection.deleteMany({}),
     pickupRequestsCollection.deleteMany({}),
+    ticketRevisionsCollection.deleteMany({}),
     pickupDateRequestsCollection.deleteMany({}),
     passwordResetCollection.deleteMany({}),
     agentApplicationsCollection.deleteMany({}),
@@ -529,6 +620,7 @@ async function ensureDatabase() {
       });
 
       await migrateJsonData();
+      await migrateTicketRevisions();
       await removeDuplicateAccounts();
       if (process.env.ALLOW_NON_ADMIN_DATA_PURGE === "true") {
         await purgeNonAdminData();
@@ -536,6 +628,8 @@ async function ensureDatabase() {
       await Promise.all([
         accountsCollection.createIndex({ email: 1 }, { unique: true }),
         pickupRequestsCollection.createIndex({ id: 1 }, { unique: true }),
+        ticketRevisionsCollection.createIndex({ id: 1 }, { unique: true }),
+        ticketRevisionsCollection.createIndex({ ticketId: 1, version: 1 }, { unique: true }),
         pickupDateRequestsCollection.createIndex({ id: 1 }, { unique: true }),
         pickupDateRequestsCollection.createIndex(
           { agentEmail: 1, active: 1 },
@@ -900,16 +994,14 @@ app.post(
     }
 
     try {
-      const account = (
-        await readAccounts()
-      ).find(
-        (item) =>
-          item.email ===
-            normalizeEmail(email) &&
-          item.role === "fieldEmployee"
-      );
+      const account = await getAccountByEmail(normalizeEmail(email));
 
-      if (!account) {
+      if (
+        !account ||
+        account.role !== "fieldEmployee" ||
+        !account.salt ||
+        !account.passwordHash
+      ) {
         return res.status(401).json({
           error:
             "Email or password is incorrect."
@@ -1518,9 +1610,18 @@ app.get(
             }) => request
           );
 
+      const isTicketHistory = requestedType === "agentTicket" || req.requestUserType === "fieldEmployee";
+      const todayRequests = isTicketHistory
+        ? agentRequests.filter((request) => isBusinessToday(request.createdAt))
+        : agentRequests;
+      const olderRejectedTickets = isTicketHistory
+        ? agentRequests.filter((request) => !isBusinessToday(request.createdAt) && request.status === "Rejected")
+        : [];
+
       return res.json({
-        requests:
-          agentRequests
+        requests: todayRequests,
+        olderRejectedTickets,
+        businessDate: businessDateKey()
       });
     } catch (error) {
       console.error(
@@ -1782,9 +1883,27 @@ app.get(
             };
           });
 
+      const range = typeof req.query?.range === "string" ? req.query.range : "all";
+      const from = typeof req.query?.from === "string" && isValidDateOnly(req.query.from) ? req.query.from : "";
+      const to = typeof req.query?.to === "string" && isValidDateOnly(req.query.to) ? req.query.to : "";
+      const reportType = typeof req.query?.reportType === "string" ? req.query.reportType : "";
+      const status = typeof req.query?.status === "string" ? req.query.status : "";
+      const role = typeof req.query?.role === "string" ? req.query.role : "";
+      const person = normalizeEmail(req.query?.person);
+      const filteredRequests = adminRequests.filter((request) => {
+        const ticket = request.requestType === "fieldEmployee" || request.requestType === "agentTicket";
+        if (reportType === "tickets" && !ticket) return false;
+        if (reportType === "pickups" && ticket) return false;
+        if (status && request.status !== status) return false;
+        if (role === "agent" && request.requestType === "fieldEmployee") return false;
+        if (role === "fieldEmployee" && request.requestType !== "fieldEmployee") return false;
+        if (person && normalizeEmail(request.agentEmail) !== person) return false;
+        return matchesAdminReportDate(request.createdAt, range, from, to);
+      });
+
       return res.json({
-        requests:
-          adminRequests
+        requests: filteredRequests,
+        businessDate: businessDateKey()
       });
     } catch (error) {
       console.error(
@@ -1810,6 +1929,19 @@ app.get("/api/admin/agent-applications", requireAdmin, async (req, res) => {
   } catch (error) {
     console.error("Admin agent application lookup failed:", error.message);
     res.status(500).json({ error: "Unable to load agent applications." });
+  }
+});
+
+app.get("/api/admin/pickup-requests/:id/revisions", requireAdmin, async (req, res) => {
+  try {
+    const revisions = await ticketRevisionsCollection.find(
+      { ticketId: req.params.id },
+      { projection: { _id: 0 } }
+    ).sort({ version: 1 }).toArray();
+    return res.json({ revisions });
+  } catch (error) {
+    console.error("Ticket revision lookup failed:", error.message);
+    return res.status(500).json({ error: "Unable to load ticket revisions." });
   }
 });
 
@@ -2029,7 +2161,7 @@ app.post(
           item &&
           typeof item.name ===
             "string" &&
-          GOODS_OPTIONS.has(item.name.trim()) &&
+          isAcceptedGoodName(item.name) &&
           (
             typeof item.quantity ===
               "number" ||
@@ -2314,7 +2446,7 @@ app.put(
     const validGoods = Array.isArray(goods) && goods.length > 0 && goods.every((item) =>
       item
       && typeof item.name === "string"
-      && GOODS_OPTIONS.has(item.name.trim())
+      && isAcceptedGoodName(item.name)
       && (typeof item.quantity === "number" || typeof item.quantity === "string")
       && String(item.quantity).trim()
       && Number.isSafeInteger(Number(item.quantity))
@@ -2354,11 +2486,12 @@ app.put(
         return res.status(409).json({ error: "This rejected ticket is no longer available to resubmit." });
       }
 
-      // Keep a self-contained snapshot of the rejected version before the
-      // editable fields are replaced. This preserves the audit trail without
-      // combining records from separate tickets.
+      // Preserve the rejected version before replacing editable fields. Each
+      // revision lives in its own document so a long-lived ticket stays small.
       const previousVersion = {
-        version: (currentTicket.ticketRevisions?.length || 0) + 1,
+        id: crypto.randomUUID(),
+        ticketId: currentTicket.id,
+        version: Number(currentTicket.revisionCount || 0) + 1,
         savedAt: now,
         status: currentTicket.status,
         goods: currentTicket.goods || [],
@@ -2368,6 +2501,7 @@ app.put(
         rejectedBy: currentTicket.rejectedBy || "",
         rejectionReason: currentTicket.rejectionReason || ""
       };
+      await ticketRevisionsCollection.insertOne(previousVersion);
       const result = await pickupRequestsCollection.updateOne(
         {
           id: req.params.id,
@@ -2387,15 +2521,17 @@ app.put(
           $unset: {
             rejectedAt: "",
             rejectedBy: "",
-            rejectionReason: ""
+            rejectionReason: "",
+            // Legacy records can still contain embedded revisions until the
+            // one-time migration reaches them.
+            ticketRevisions: ""
           },
-          $push: {
-            ticketRevisions: previousVersion
-          }
+          $inc: { revisionCount: 1 }
         }
       );
 
       if (!result.matchedCount) {
+        await ticketRevisionsCollection.deleteOne({ id: previousVersion.id });
         return res.status(409).json({ error: "This rejected ticket is no longer available to resubmit." });
       }
 

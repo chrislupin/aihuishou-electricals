@@ -181,7 +181,7 @@
             addRequestDetail(details, 'Rejected', request.rejectedAt ? formatDate(request.rejectedAt) : '—');
             addRequestDetail(details, 'Rejection reason', request.rejectionReason || 'No reason provided');
           }
-          if (Array.isArray(request.ticketRevisions) && request.ticketRevisions.length) addRequestDetail(details, 'Previous versions retained', `${request.ticketRevisions.length}`);
+          if (request.revisionCount) addRequestDetail(details, 'Previous versions retained', `${request.revisionCount}`);
         }
         const actions = document.createElement('div'); actions.className = 'actions';
 
@@ -227,6 +227,24 @@
             load();
           });
           actions.append(reject);
+        }
+        if (!pickup && request.revisionCount) {
+          const revisions = document.createElement('button');
+          revisions.className = 'btn ghost';
+          revisions.type = 'button';
+          revisions.textContent = 'View revision history';
+          revisions.addEventListener('click', async () => {
+            revisions.disabled = true;
+            try {
+              const response = await fetch(`/api/admin/pickup-requests/${encodeURIComponent(request.id)}/revisions`);
+              const result = await response.json().catch(() => ({}));
+              if (!response.ok) throw new Error(result.error || 'Unable to load revision history.');
+              const history = (result.revisions || []).map((revision) => `Version ${revision.version}: ${revision.status}${revision.rejectionReason ? ` — ${revision.rejectionReason}` : ''}`).join('\n');
+              alert(history || 'No previous versions found.');
+            } catch (error) { alert(error.message || 'Unable to load revision history.'); }
+            finally { revisions.disabled = false; }
+          });
+          actions.append(revisions);
         }
 
         card.append(top, details, actions);
@@ -446,31 +464,36 @@
 
       async function load() {
         root.replaceChildren();
+        const results = await Promise.allSettled([
+          fetch('/api/admin/pickup-requests'),
+          fetch('/api/admin/accounts'),
+          fetch('/api/admin/agent-applications')
+        ]);
+        const responses = results.filter((result) => result.status === 'fulfilled').map((result) => result.value);
+        if (responses.some((response) => response.status === 401)) return location.assign('admin-login.html');
+        const read = async (result, label) => {
+          if (result.status === 'rejected') throw new Error(`Unable to load ${label}.`);
+          const data = await result.value.json().catch(() => ({}));
+          if (!result.value.ok) throw new Error(data.error || `Unable to load ${label}.`);
+          return data;
+        };
         try {
-          const [requestResponse, accountResponse, applicationResponse] = await Promise.all([fetch('/api/admin/pickup-requests'), fetch('/api/admin/accounts'), fetch('/api/admin/agent-applications')]);
-          if (requestResponse.status === 401 || accountResponse.status === 401 || applicationResponse.status === 401) {
-            location.assign('admin-login.html');
-            return;
-          }
-          const requestData = await requestResponse.json();
-          const accountData = await accountResponse.json();
-          const applicationData = await applicationResponse.json();
-          if (!requestResponse.ok) throw new Error(requestData.error || 'Unable to load pickup requests.');
-          if (!accountResponse.ok) throw new Error(accountData.error || 'Unable to load accounts.');
-          if (!applicationResponse.ok) throw new Error(applicationData.error || 'Unable to load agent applications.');
+          const requestData = await read(results[0], 'pickup requests');
           requests = requestData.requests || [];
-          accounts = accountData.accounts || [];
-          applications = applicationData.applications || [];
-          if (viewName === 'approved-pickups') requests = requests.filter((request) => isPickupRequest(request) && request.status === 'Approved');
-          if (viewName === 'approved-agents') requests = requests.filter((request) => isAgentTicket(request) && request.status === 'Approved');
-          if (viewName === 'approved-fields') requests = requests.filter((request) => !isPickupRequest(request));
-          if (viewName === 'accounts') renderAccounts();
-          else if (viewName === 'applications') renderApplications();
-          else if (viewName === 'pickup-dates') renderDateApprovals();
-          else renderFiltersAndRequests();
         } catch (error) {
-          showEmpty(root, error.message || 'Unable to load the admin dashboard.');
+          return showEmpty(root, error.message || 'Unable to load pickup requests.');
         }
+        try { accounts = (await read(results[1], 'accounts')).accounts || []; } catch { accounts = []; }
+        try { applications = (await read(results[2], 'agent applications')).applications || []; } catch (error) {
+          if (viewName === 'applications') return showEmpty(root, error.message || 'Unable to load agent applications.');
+        }
+        if (viewName === 'approved-pickups') requests = requests.filter((request) => isPickupRequest(request) && request.status === 'Approved');
+        if (viewName === 'approved-agents') requests = requests.filter((request) => isAgentTicket(request) && request.status === 'Approved');
+        if (viewName === 'approved-fields') requests = requests.filter((request) => !isPickupRequest(request));
+        if (viewName === 'accounts') renderAccounts();
+        else if (viewName === 'applications') renderApplications();
+        else if (viewName === 'pickup-dates') renderDateApprovals();
+        else renderFiltersAndRequests();
       }
 
       $('#refresh').addEventListener('click', load);

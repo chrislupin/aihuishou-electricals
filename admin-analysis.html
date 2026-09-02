@@ -173,21 +173,6 @@
       }
 
       function isInDateRange(request) {
-        const date = new Date(request.createdAt);
-        const now = new Date();
-        const range = controls.range.value;
-        if (range === 'all') return true;
-        if (range === 'daily') return date.toDateString() === now.toDateString();
-        if (range === 'weekly') {
-          const start = startOfWeek(now);
-          const end = new Date(start);
-          end.setDate(end.getDate() + 7);
-          return date >= start && date < end;
-        }
-        if (range === 'monthly') return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth();
-        if (range === 'yearly') return date.getFullYear() === now.getFullYear();
-        if (controls.from.value && date < new Date(`${controls.from.value}T00:00:00`)) return false;
-        if (controls.to.value && date > new Date(`${controls.to.value}T23:59:59.999`)) return false;
         return true;
       }
 
@@ -424,6 +409,29 @@
         controls.to.value = '';
         updateReportType();
         updateDateInputs();
+        refreshReportRequests();
+      }
+
+      async function refreshReportRequests() {
+        const params = new URLSearchParams({
+          reportType: controls.reportType.value,
+          range: controls.range.value
+        });
+        if (controls.person.value) params.set('person', controls.person.value);
+        if (controls.role.value) params.set('role', controls.role.value);
+        if (controls.status.value) params.set('status', controls.status.value);
+        if (controls.from.value) params.set('from', controls.from.value);
+        if (controls.to.value) params.set('to', controls.to.value);
+        try {
+          const response = await fetch(`/api/admin/pickup-requests?${params}`);
+          if (response.status === 401) return location.assign('admin-login.html');
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || 'Unable to load the filtered report.');
+          requests = data.requests || [];
+          render();
+        } catch (error) {
+          $('#results').replaceChildren(Object.assign(document.createElement('div'), { className: 'empty', textContent: error.message || 'Unable to load the filtered report.' }));
+        }
       }
 
       async function load() {
@@ -444,9 +452,9 @@
       }
 
       controls.search.addEventListener('input', render);
-      [controls.person, controls.role, controls.status, controls.from, controls.to].forEach((control) => control.addEventListener('change', render));
-      controls.reportType.addEventListener('change', updateReportType);
-      controls.range.addEventListener('change', updateDateInputs);
+      [controls.person, controls.role, controls.status, controls.from, controls.to].forEach((control) => control.addEventListener('change', refreshReportRequests));
+      controls.reportType.addEventListener('change', () => { updateReportType(); refreshReportRequests(); });
+      controls.range.addEventListener('change', () => { updateDateInputs(); refreshReportRequests(); });
       $('#clear').addEventListener('click', clearFilters);
       $('#generateReport').addEventListener('click', generateReport);
       $('#logout').addEventListener('click', async () => { await fetch('/api/admin-logout', { method: 'POST' }); location.assign('admin-login.html'); });
