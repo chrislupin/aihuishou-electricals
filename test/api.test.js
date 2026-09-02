@@ -9,6 +9,9 @@ process.env.MONGODB_DB = "aihuishou-test";
 process.env.SESSION_SECRET = "test-session-secret";
 process.env.ADMIN_EMAIL = "admin@example.com";
 process.env.ADMIN_PASSWORD = "admin-password";
+process.env.SMTP_HOST = "smtp.test";
+process.env.SMTP_USER = "mailer@example.com";
+process.env.SMTP_PASS = "test-smtp-password";
 
 const clone = (value) => structuredClone(value);
 const matches = (document, query = {}) => Object.entries(query).every(([key, expected]) => {
@@ -167,6 +170,10 @@ test("admin creates accountant accounts but only accountants can approve tickets
   const accountantCookie = await login("/api/accountant-login", "accountant@example.com", "accountant-password", "accountant_session");
   result = await request("/api/agent-login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: "accountant@example.com", password: "accountant-password" }) });
   assert.equal(result.response.status, 401);
+  result = await request("/api/admin/accounts", { headers: { cookie: accountantCookie } });
+  assert.equal(result.response.status, 401);
+  result = await request("/api/admin/pickup-requests", { headers: { cookie: adminCookie } });
+  assert.equal(result.response.status, 200);
   collection("pickup_requests").records.push({ id: "accountant-ticket", agentEmail: "owner@example.com", requestType: "agentTicket", status: "Pending approval", goods: [{ name: "LCDs", quantity: 1, amount: 10 }], createdAt: new Date().toISOString() });
   result = await request("/api/admin/pickup-requests/accountant-ticket/approve", { method: "POST", headers: { cookie: adminCookie } });
   assert.equal(result.response.status, 401);
@@ -174,9 +181,51 @@ test("admin creates accountant accounts but only accountants can approve tickets
   assert.equal(result.response.status, 200);
   assert.equal((await collection("pickup_requests").findOne({ id: "accountant-ticket" })).approvedBy, "accountant@example.com");
   collection("pickup_date_requests").records.push({ id: "accountant-date", agentEmail: "owner@example.com", requestedDate: businessDateKey(), status: "Pending approval", active: true, createdAt: new Date().toISOString() });
+  result = await request("/api/admin/pickup-date-requests", { headers: { cookie: adminCookie } });
+  assert.equal(result.response.status, 200);
+  assert.ok(result.body.requests.some((item) => item.id === "accountant-date"));
+  result = await request("/api/admin/pickup-date-requests/accountant-date/approve", { method: "POST", headers: { cookie: adminCookie } });
+  assert.equal(result.response.status, 401);
   result = await request("/api/admin/pickup-date-requests/accountant-date/approve", { method: "POST", headers: { cookie: accountantCookie } });
   assert.equal(result.response.status, 200);
   assert.equal((await collection("pickup_date_requests").findOne({ id: "accountant-date" })).reviewedBy, "accountant@example.com");
+});
+
+test("accountant registration needs admin approval and then supports password reset", async () => {
+  let result = await request("/api/accountant-applications", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ fullName: "New Accountant", email: "new-accountant@example.com", password: "new-accountant-password" })
+  });
+  assert.equal(result.response.status, 201);
+  const application = await collection("accountant_applications").findOne({ email: "new-accountant@example.com" });
+  assert.equal(application.status, "Pending");
+  assert.equal(await collection("agent_accounts").findOne({ email: "new-accountant@example.com" }), null);
+
+  result = await request("/api/accountant-login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: "new-accountant@example.com", password: "new-accountant-password" })
+  });
+  assert.equal(result.response.status, 401);
+
+  const adminCookie = await login("/api/admin-login", "admin@example.com", "admin-password", "admin_session");
+  result = await request("/api/admin/accountant-applications", { headers: { cookie: adminCookie } });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.applications.find((item) => item.id === application.id).passwordHash, undefined);
+  result = await request(`/api/admin/accountant-applications/${application.id}/approve`, { method: "POST", headers: { cookie: adminCookie } });
+  assert.equal(result.response.status, 200);
+  assert.equal((await collection("agent_accounts").findOne({ email: "new-accountant@example.com" })).accessStatus, "active");
+
+  const accountantCookie = await login("/api/accountant-login", "new-accountant@example.com", "new-accountant-password", "accountant_session");
+  assert.ok(accountantCookie.startsWith("accountant_session="));
+  result = await request("/api/password-reset/request", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: "new-accountant@example.com" })
+  });
+  assert.equal(result.response.status, 200);
+  assert.ok(await collection("password_resets").findOne({ email: "new-accountant@example.com" }));
 });
 
 test("ticket history keeps older rejected tickets actionable and report filters use Nairobi dates", async () => {

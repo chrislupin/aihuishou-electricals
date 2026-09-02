@@ -59,6 +59,7 @@ const passwordResetCollection = database?.collection("password_resets");
 const adminAccountsCollection = database?.collection("admin_accounts");
 const agentApplicationsCollection = database?.collection("agent_applications");
 const agentAccessInvitesCollection = database?.collection("agent_access_invites");
+const accountantApplicationsCollection = database?.collection("accountant_applications");
 
 const adminEmail = normalizeConfiguredEmail(process.env.ADMIN_EMAIL);
 
@@ -146,6 +147,7 @@ app.get("/robots.txt", (req, res) => {
     "Disallow: /password-reset.html\n" +
     "Disallow: /admin-login.html\n" +
     "Disallow: /accountant-login.html\n" +
+    "Disallow: /accountant-signup.html\n" +
     "Disallow: /admin-dashboard.html\n" +
     "Disallow: /admin-analysis.html\n" +
     "Disallow: /agent-login.html\n" +
@@ -599,6 +601,7 @@ async function purgeNonAdminData() {
     passwordResetCollection.deleteMany({}),
     agentApplicationsCollection.deleteMany({}),
     agentAccessInvitesCollection.deleteMany({}),
+    accountantApplicationsCollection.deleteMany({}),
     adminAccountsCollection.deleteMany(adminFilter)
   ]);
 }
@@ -643,7 +646,9 @@ async function ensureDatabase() {
         agentApplicationsCollection.createIndex({ email: 1, status: 1, createdAt: -1 }),
         agentAccessInvitesCollection.createIndex({ id: 1 }, { unique: true }),
         agentAccessInvitesCollection.createIndex({ email: 1 }),
-        agentAccessInvitesCollection.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 })
+        agentAccessInvitesCollection.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
+        accountantApplicationsCollection.createIndex({ id: 1 }, { unique: true }),
+        accountantApplicationsCollection.createIndex({ email: 1, status: 1, createdAt: -1 })
       ]);
     })().catch((error) => {
       databaseReady = undefined;
@@ -685,21 +690,29 @@ function readSignedSession(req, cookieName) {
 
 function createSession(res, account) {
   res.clearCookie("field_employee_session", { path: "/" });
+  res.clearCookie("accountant_session", { path: "/" });
+  res.clearCookie("admin_session", { path: "/" });
   createSignedSession(res, "agent_session", { email: account.email, role: "agent" });
 }
 
 function createFieldEmployeeSession(res, account) {
   res.clearCookie("agent_session", { path: "/" });
+  res.clearCookie("accountant_session", { path: "/" });
+  res.clearCookie("admin_session", { path: "/" });
   createSignedSession(res, "field_employee_session", { email: account.email, role: "fieldEmployee" });
 }
 
 function createAdminSession(res) {
+  res.clearCookie("agent_session", { path: "/" });
+  res.clearCookie("field_employee_session", { path: "/" });
+  res.clearCookie("accountant_session", { path: "/" });
   createSignedSession(res, "admin_session", { admin: true });
 }
 
 function createAccountantSession(res, account) {
   res.clearCookie("agent_session", { path: "/" });
   res.clearCookie("field_employee_session", { path: "/" });
+  res.clearCookie("admin_session", { path: "/" });
   createSignedSession(res, "accountant_session", { email: account.email, role: "accountant" });
 }
 
@@ -722,7 +735,7 @@ async function getCurrentAccountant(req) {
   const session = readSignedSession(req, "accountant_session");
   if (!session || session.role !== "accountant" || session.expiresAt < Date.now()) return null;
   const account = await getAccountByEmail(session.email);
-  return account?.role === "accountant" && account.accessStatus !== "disabled" ? account : null;
+  return account?.role === "accountant" && account.accessStatus === "active" ? account : null;
 }
 
 async function requireAccountant(req, res, next) {
@@ -1385,7 +1398,7 @@ app.post("/api/password-reset/request", authLimiter, async (req, res) => {
     const isAdmin = email === adminEmail;
 
     // Always return the same response so this endpoint cannot disclose registered emails.
-    if (account || isAdmin) {
+    if ((account && account.accessStatus !== "invited") || isAdmin) {
       const token = crypto.randomBytes(32).toString("hex");
       await passwordResetCollection.deleteMany({ email });
       await passwordResetCollection.insertOne({
@@ -1435,7 +1448,10 @@ app.post("/api/password-reset/confirm", authLimiter, async (req, res) => {
     if (normalizedEmail === adminEmail) {
       await adminAccountsCollection.updateOne({ email: normalizedEmail }, { $set: { email: normalizedEmail, salt, passwordHash, updatedAt: new Date() } }, { upsert: true });
     } else {
-      const result = await accountsCollection.updateOne({ email: normalizedEmail }, { $set: { salt, passwordHash, updatedAt: new Date().toISOString() } });
+      const result = await accountsCollection.updateOne(
+        { email: normalizedEmail, accessStatus: { $ne: "invited" } },
+        { $set: { salt, passwordHash, updatedAt: new Date().toISOString() } }
+      );
       if (!result.matchedCount) return res.status(400).json({ error: "This account no longer exists." });
     }
 
@@ -1597,6 +1613,53 @@ app.post("/api/agent-applications", requestLimiter, rejectBotSubmission, async (
   } catch (error) {
     console.error("Agent application creation failed:", error.message);
     return res.status(500).json({ error: "Unable to submit your application. Please try again." });
+  }
+});
+
+// Accountant registrations are reviewed by an administrator before an
+// operational account is created. This keeps a public sign-up form from
+// granting approval privileges by itself.
+app.post("/api/accountant-applications", requestLimiter, rejectBotSubmission, async (req, res) => {
+  const fullName = applicationField(req.body?.fullName, 160);
+  const email = applicationEmail(req.body?.email);
+  const password = req.body?.password;
+
+  if (!fullName || !email || !isValidPassword(password)) {
+    return res.status(400).json({ error: "Enter your full name, email address and a password of at least 8 characters." });
+  }
+
+  try {
+    const [account, pendingApplication] = await Promise.all([
+      getAccountByEmail(email),
+      accountantApplicationsCollection.findOne({ email, status: "Pending" })
+    ]);
+    if (account || pendingApplication) {
+      return res.status(409).json({
+        error: pendingApplication
+          ? "An accountant registration from this email is already awaiting review."
+          : "An account with this email already exists."
+      });
+    }
+
+    const salt = crypto.randomBytes(16).toString("hex");
+    const passwordHash = (await scrypt(password, salt, 64)).toString("hex");
+    await accountantApplicationsCollection.insertOne({
+      id: crypto.randomUUID(),
+      fullName,
+      email,
+      salt,
+      passwordHash,
+      status: "Pending",
+      createdAt: new Date().toISOString()
+    });
+
+    return res.status(201).json({
+      message: "Your accountant registration has been submitted. An administrator will review it before you can sign in."
+    });
+  } catch (error) {
+    if (error?.code === 11000) return res.status(409).json({ error: "An accountant registration from this email is already awaiting review." });
+    console.error("Accountant registration failed:", error.message);
+    return res.status(500).json({ error: "Unable to submit your accountant registration. Please try again." });
   }
 });
 
@@ -1784,7 +1847,7 @@ app.post(
       }
 
       return res.status(201).json({
-        message: "Pickup date sent for admin approval.",
+        message: "Pickup date sent for accountant approval.",
         approval: withoutMongoId(approval)
       });
     } catch (error) {
@@ -2172,6 +2235,69 @@ app.post("/api/admin/agent-applications/:id/reject", requireAdmin, async (req, r
   }
 });
 
+app.get("/api/admin/accountant-applications", requireAdmin, async (req, res) => {
+  try {
+    const applications = await accountantApplicationsCollection.find(
+      {},
+      { projection: { _id: 0, passwordHash: 0, salt: 0 } }
+    ).sort({ createdAt: -1 }).toArray();
+    return res.json({ applications });
+  } catch (error) {
+    console.error("Accountant registration lookup failed:", error.message);
+    return res.status(500).json({ error: "Unable to load accountant registrations." });
+  }
+});
+
+app.post("/api/admin/accountant-applications/:id/approve", requireAdmin, async (req, res) => {
+  try {
+    const application = withoutMongoId(await accountantApplicationsCollection.findOne({ id: req.params.id, status: "Pending" }));
+    if (!application) return res.status(404).json({ error: "Pending accountant registration not found." });
+    if (await getAccountByEmail(application.email)) return res.status(409).json({ error: "An account with this email already exists." });
+
+    const account = {
+      role: "accountant",
+      accessStatus: "active",
+      fullName: application.fullName,
+      email: application.email,
+      salt: application.salt,
+      passwordHash: application.passwordHash,
+      createdAt: new Date().toISOString(),
+      createdBy: adminEmail,
+      registrationId: application.id
+    };
+    await accountsCollection.insertOne(account);
+    await accountantApplicationsCollection.updateOne(
+      { id: application.id, status: "Pending" },
+      {
+        $set: { status: "Approved", reviewedAt: new Date().toISOString(), reviewedBy: adminEmail },
+        $unset: { salt: "", passwordHash: "" }
+      }
+    );
+    return res.json({ message: "Accountant registration approved. The accountant can now sign in." });
+  } catch (error) {
+    if (error?.code === 11000) return res.status(409).json({ error: "An account with this email already exists." });
+    console.error("Accountant registration approval failed:", error.message);
+    return res.status(500).json({ error: "Unable to approve this accountant registration." });
+  }
+});
+
+app.post("/api/admin/accountant-applications/:id/reject", requireAdmin, async (req, res) => {
+  try {
+    const result = await accountantApplicationsCollection.updateOne(
+      { id: req.params.id, status: "Pending" },
+      {
+        $set: { status: "Rejected", reviewedAt: new Date().toISOString(), reviewedBy: adminEmail },
+        $unset: { salt: "", passwordHash: "" }
+      }
+    );
+    if (!result.matchedCount) return res.status(404).json({ error: "Pending accountant registration not found." });
+    return res.json({ message: "Accountant registration rejected." });
+  } catch (error) {
+    console.error("Accountant registration rejection failed:", error.message);
+    return res.status(500).json({ error: "Unable to reject this accountant registration." });
+  }
+});
+
 app.get("/api/admin/accounts", requireAdmin, async (req, res) => {
   try {
     const accounts = await accountsCollection.find(
@@ -2441,8 +2567,8 @@ app.post(
     return res.status(201).json({
       message:
         isAgentPickup
-          ? "Pickup request created and sent for admin approval."
-          : "Ticket created and sent for admin approval.",
+          ? "Pickup request created and sent for accountant approval."
+          : "Ticket created and sent for accountant approval.",
       emailSent,
       request:
         responseRequest
@@ -2640,7 +2766,7 @@ app.put(
         return res.status(409).json({ error: "This rejected ticket is no longer available to resubmit." });
       }
 
-      return res.json({ message: "Ticket updated and resubmitted for admin approval." });
+      return res.json({ message: "Ticket updated and resubmitted for accountant approval." });
     } catch (error) {
       console.error("Ticket resubmission failed:", error.message);
       return res.status(500).json({ error: "Unable to resubmit ticket." });

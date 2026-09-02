@@ -88,19 +88,21 @@
       if (portalRole === 'accountant' && !['overview', 'pickup-dates', 'approved-fields'].includes(viewName)) location.replace('admin-dashboard.html?role=accountant');
       const root = $('#view');
       const titles = {
-        overview: 'Requests & tickets inbox',
+        overview: 'Overview & approvals',
         applications: 'Agent applications',
         'pickup-dates': 'Pickup dates approval',
         'approved-fields': 'Ticket Center',
         accounts: 'Manage employees and agents'
       };
       let requests = [];
+      let pickupDateRequests = [];
       let accounts = [];
       let applications = [];
+      let accountantApplications = [];
 
       if (portalRole === 'accountant') {
         document.querySelectorAll('.admin-only').forEach((element) => element.remove());
-        document.querySelector('[data-view="overview"]').textContent = 'Overview & approvals';
+        document.querySelector('[data-view="overview"]').textContent = 'Overview & approved';
         document.querySelectorAll('.nav a[data-view]').forEach((link) => {
           const linkParams = new URL(link.href).searchParams;
           linkParams.set('role', 'accountant');
@@ -305,18 +307,82 @@
       }
 
       function renderDateApprovals() {
-        root.innerHTML = '<p class="muted date-approval-intro">Review pickup requests independently. Each request shows only the goods, location, notes and date included in that pickup request.</p><section class="filters"><label>Status <select id="dateApprovalStatus"><option value="Pending approval">Pending approval</option><option value="all">All statuses</option><option value="Approved">Approved</option></select></label><label>From <input id="dateApprovalFrom" type="date" /></label><label>To <input id="dateApprovalTo" type="date" /></label></section><div id="dateApprovals"></div>';
+        root.innerHTML = '<p class="muted date-approval-intro">These are pickup-date approval requests. They are separate from pickup tickets, so each decision is recorded against the exact requested date.</p><section class="filters"><label>Status <select id="dateApprovalStatus"><option value="Pending approval">Pending approval</option><option value="all">All statuses</option><option value="Approved">Approved</option><option value="Rejected">Rejected</option></select></label><label>From <input id="dateApprovalFrom" type="date" /></label><label>To <input id="dateApprovalTo" type="date" /></label></section><div id="dateApprovals"></div>';
         const statusSelect = $('#dateApprovalStatus');
         const fromInput = $('#dateApprovalFrom');
         const toInput = $('#dateApprovalTo');
         const target = $('#dateApprovals');
         const draw = () => {
-          const selected = requests.filter((request) => isPickupRequest(request) && (statusSelect.value === 'all' || request.status === statusSelect.value) && isWithinDateRange(request, fromInput.value, toInput.value));
+          const selected = pickupDateRequests.filter((request) => (statusSelect.value === 'all' || request.status === statusSelect.value) && isWithinDateRange(request, fromInput.value, toInput.value));
           if (!selected.length) {
-            showEmpty(target, statusSelect.value === 'Pending approval' ? 'No pickup requests are waiting for approval.' : 'No pickup requests match this filter.');
+            showEmpty(target, statusSelect.value === 'Pending approval' ? 'No pickup-date requests are waiting for approval.' : 'No pickup-date requests match this filter.');
             return;
           }
-          listRequests(target, selected, 'No pickup requests match this filter.');
+          const wrap = document.createElement('div');
+          wrap.className = 'date-approval-wrap';
+          const table = document.createElement('table');
+          table.className = 'date-approval-table';
+          const head = document.createElement('thead');
+          const headingRow = document.createElement('tr');
+          ['Employee / agent', 'Requested pickup date', 'Submitted', 'Goods since last pickup', 'Status', 'Decision'].forEach((label) => {
+            const cell = document.createElement('th');
+            cell.textContent = label;
+            headingRow.append(cell);
+          });
+          head.append(headingRow);
+          const body = document.createElement('tbody');
+          selected.forEach((request) => {
+            const row = document.createElement('tr');
+            const agent = request.agent || {};
+            const person = document.createElement('td');
+            person.className = 'person';
+            person.textContent = agent.fullName || request.agentEmail || 'Unknown account';
+            const date = document.createElement('td');
+            date.textContent = formatPickupDate(request.requestedDate);
+            const submitted = document.createElement('td');
+            submitted.textContent = request.createdAt ? formatDate(request.createdAt) : '—';
+            const goods = document.createElement('td');
+            goods.textContent = `${Number(request.totalQuantitySinceLastPickup || 0).toLocaleString('en-KE')} items · KSh ${formatAmount(request.totalAmountSinceLastPickup)}`;
+            const status = document.createElement('td');
+            const badge = document.createElement('span');
+            badge.className = `badge${request.status === 'Approved' ? ' approved' : request.status === 'Rejected' ? ' rejected' : ''}`;
+            badge.textContent = request.status || 'Pending approval';
+            status.append(badge);
+            const decision = document.createElement('td');
+            if (canApprove && request.status === 'Pending approval') {
+              const actions = document.createElement('div');
+              actions.className = 'approval-actions';
+              const decide = async (action, reason = '') => {
+                const response = await fetch(`/api/admin/pickup-date-requests/${encodeURIComponent(request.id)}/${action}`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: action === 'reject' ? JSON.stringify({ reason }) : undefined
+                });
+                if (!response.ok) {
+                  const result = await response.json().catch(() => ({}));
+                  throw new Error(result.error || `Unable to ${action} this pickup date.`);
+                }
+                load();
+              };
+              const approve = document.createElement('button');
+              approve.className = 'btn'; approve.type = 'button'; approve.textContent = 'Approve date';
+              approve.addEventListener('click', async () => { approve.disabled = true; try { await decide('approve'); } catch (error) { alert(error.message || 'Unable to approve this pickup date.'); approve.disabled = false; } });
+              const reject = document.createElement('button');
+              reject.className = 'btn danger'; reject.type = 'button'; reject.textContent = 'Reject date';
+              reject.addEventListener('click', async () => { const reason = prompt('Optional rejection reason for the agent:'); if (reason === null) return; reject.disabled = true; try { await decide('reject', reason); } catch (error) { alert(error.message || 'Unable to reject this pickup date.'); reject.disabled = false; } });
+              actions.append(approve, reject);
+              decision.append(actions);
+            } else {
+              const reviewer = request.reviewedBy ? `Reviewed by ${request.reviewedBy}` : 'View only';
+              const reviewedAt = request.reviewedAt ? ` · ${formatDate(request.reviewedAt)}` : '';
+              decision.textContent = `${reviewer}${reviewedAt}${request.rejectionReason ? ` · ${request.rejectionReason}` : ''}`;
+            }
+            row.append(person, date, submitted, goods, status, decision);
+            body.append(row);
+          });
+          table.append(head, body);
+          wrap.append(table);
+          target.replaceChildren(wrap);
         };
         statusSelect.addEventListener('change', draw);
         fromInput.addEventListener('change', draw);
@@ -351,13 +417,47 @@
       }
 
       function renderAccounts() {
-        root.innerHTML = '<p class="muted">Create and manage agent, field employee and accountant accounts. Deleting an account permanently removes its login access; existing request records are retained.</p><section class="card"><h2>Create accountant account</h2><form id="createAccountant"><div class="filters"><label>Full name <input name="fullName" required maxlength="160" /></label><label>Email <input name="email" type="email" required /></label><label>Temporary password <input name="password" type="password" minlength="8" required /></label><button class="btn" type="submit">Create accountant</button></div><p class="muted" id="accountantCreateStatus"></p></form></section><div id="accounts"></div>';
+        root.innerHTML = '<p class="muted">Create and manage agent, field employee and accountant accounts. Deleting an account permanently removes its login access; existing request records are retained.</p><section class="card"><h2>Create accountant account</h2><form id="createAccountant"><div class="filters"><label>Full name <input name="fullName" required maxlength="160" /></label><label>Email <input name="email" type="email" required /></label><label>Temporary password <input name="password" type="password" minlength="8" required /></label><button class="btn" type="submit">Create accountant</button></div><p class="muted" id="accountantCreateStatus"></p></form></section><section><h2>Accountant registration requests</h2><div id="accountantApplications"></div></section><section><h2>Accounts</h2><div id="accounts"></div></section>';
         document.getElementById('createAccountant').addEventListener('submit', async (event) => {
           event.preventDefault(); const form = event.currentTarget; const status = $('#accountantCreateStatus'); const button = form.querySelector('button'); button.disabled = true; status.textContent = 'Creating accountant account…';
           try { const response = await fetch('/api/admin/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...Object.fromEntries(new FormData(form).entries()), role: 'accountant' }) }); const result = await response.json().catch(() => ({})); if (!response.ok) throw new Error(result.error || 'Unable to create accountant account.'); form.reset(); status.textContent = 'Accountant account created.'; load(); }
           catch (error) { status.textContent = error.message || 'Unable to create accountant account.'; }
           finally { button.disabled = false; }
         });
+        const registrationTarget = $('#accountantApplications');
+        const pendingRegistrations = accountantApplications.filter((application) => application.status === 'Pending');
+        if (!pendingRegistrations.length) {
+          showEmpty(registrationTarget, 'No accountant registrations are waiting for review.');
+        } else {
+          pendingRegistrations.forEach((application) => {
+            const card = document.createElement('article');
+            card.className = 'card account';
+            const details = document.createElement('div');
+            const name = document.createElement('strong');
+            const meta = document.createElement('div');
+            name.textContent = application.fullName;
+            meta.className = 'muted';
+            meta.textContent = `${application.email} · Registered ${formatDate(application.createdAt)}`;
+            details.append(name, meta);
+            const actions = document.createElement('div');
+            actions.className = 'approval-actions';
+            const review = async (action) => {
+              const response = await fetch(`/api/admin/accountant-applications/${encodeURIComponent(application.id)}/${action}`, { method: 'POST' });
+              const result = await response.json().catch(() => ({}));
+              if (!response.ok) throw new Error(result.error || `Unable to ${action} this registration.`);
+              load();
+            };
+            const approve = document.createElement('button');
+            approve.className = 'btn'; approve.type = 'button'; approve.textContent = 'Approve registration';
+            approve.addEventListener('click', async () => { if (!confirm(`Approve ${application.fullName}'s accountant registration?`)) return; approve.disabled = true; try { await review('approve'); } catch (error) { alert(error.message || 'Unable to approve this registration.'); approve.disabled = false; } });
+            const reject = document.createElement('button');
+            reject.className = 'btn danger'; reject.type = 'button'; reject.textContent = 'Reject';
+            reject.addEventListener('click', async () => { if (!confirm(`Reject ${application.fullName}'s accountant registration?`)) return; reject.disabled = true; try { await review('reject'); } catch (error) { alert(error.message || 'Unable to reject this registration.'); reject.disabled = false; } });
+            actions.append(approve, reject);
+            card.append(details, actions);
+            registrationTarget.append(card);
+          });
+        }
         const target = $('#accounts');
         if (!accounts.length) {
           showEmpty(target, 'No accounts have been created yet.');
@@ -484,10 +584,18 @@
 
       async function load() {
         root.replaceChildren();
+        const sessionResponse = await fetch(portalRole === 'accountant' ? '/api/accountant-session' : '/api/admin-session').catch(() => null);
+        if (!sessionResponse?.ok) {
+          const alternateSession = await fetch(portalRole === 'accountant' ? '/api/admin-session' : '/api/accountant-session').catch(() => null);
+          if (alternateSession?.ok) return location.replace(portalRole === 'accountant' ? 'admin-dashboard.html' : 'admin-dashboard.html?role=accountant');
+          return location.assign(portalRole === 'accountant' ? 'accountant-login.html' : 'admin-login.html');
+        }
         const results = await Promise.allSettled([
           fetch('/api/admin/pickup-requests'),
+          fetch('/api/admin/pickup-date-requests'),
           portalRole === 'admin' ? fetch('/api/admin/accounts') : Promise.resolve(null),
-          portalRole === 'admin' ? fetch('/api/admin/agent-applications') : Promise.resolve(null)
+          portalRole === 'admin' ? fetch('/api/admin/agent-applications') : Promise.resolve(null),
+          portalRole === 'admin' ? fetch('/api/admin/accountant-applications') : Promise.resolve(null)
         ]);
         const responses = results.filter((result) => result.status === 'fulfilled' && result.value).map((result) => result.value);
         if (responses.some((response) => response.status === 401)) return location.assign(portalRole === 'accountant' ? 'accountant-login.html' : 'admin-login.html');
@@ -500,13 +608,16 @@
         try {
           const requestData = await read(results[0], 'pickup requests');
           requests = requestData.requests || [];
+          const pickupDateData = await read(results[1], 'pickup-date requests');
+          pickupDateRequests = pickupDateData.requests || [];
         } catch (error) {
-          return showEmpty(root, error.message || 'Unable to load pickup requests.');
+          return showEmpty(root, error.message || 'Unable to load dashboard requests.');
         }
-        try { accounts = (await read(results[1], 'accounts')).accounts || []; } catch { accounts = []; }
-        try { applications = (await read(results[2], 'agent applications')).applications || []; } catch (error) {
+        try { accounts = (await read(results[2], 'accounts')).accounts || []; } catch { accounts = []; }
+        try { applications = (await read(results[3], 'agent applications')).applications || []; } catch (error) {
           if (viewName === 'applications') return showEmpty(root, error.message || 'Unable to load agent applications.');
         }
+        try { accountantApplications = (await read(results[4], 'accountant registrations')).applications || []; } catch { accountantApplications = []; }
         if (viewName === 'approved-pickups') requests = requests.filter((request) => isPickupRequest(request) && request.status === 'Approved');
         if (viewName === 'approved-agents') requests = requests.filter((request) => isAgentTicket(request) && request.status === 'Approved');
         if (viewName === 'approved-fields') requests = requests.filter((request) => !isPickupRequest(request));
