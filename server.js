@@ -42,7 +42,8 @@ if (process.env.MONGODB_URI) {
     mongoClient = new MongoClient(process.env.MONGODB_URI.trim(), {
       serverSelectionTimeoutMS: 10000,
       connectTimeoutMS: 10000,
-      maxPoolSize: 10
+      maxPoolSize: 10,
+      writeConcern: { w: "majority", j: true, wtimeoutMS: 10000 }
     });
   } catch (error) {
     console.error("Invalid MONGODB_URI configuration:", error.message);
@@ -253,6 +254,7 @@ const requestLimiter = rateLimit({
 app.get("/health", async (req, res) => {
   try {
     await ensureDatabase();
+    await database.command({ ping: 1 });
     res.json({ status: "ok", database: "connected" });
   } catch (error) {
     console.error("Health check database failure:", error.message);
@@ -297,6 +299,10 @@ function isValidPassword(password) {
 
 function sessionVersion(value) {
   return Number.isSafeInteger(value) && value >= 0 ? value : 0;
+}
+
+function validIdempotencyKey(value) {
+  return typeof value === "string" && /^[a-zA-Z0-9_-]{16,128}$/.test(value);
 }
 
 function businessDateKey(value = new Date()) {
@@ -701,6 +707,10 @@ async function ensureDatabase() {
       await Promise.all([
         accountsCollection.createIndex({ email: 1 }, { unique: true }),
         pickupRequestsCollection.createIndex({ id: 1 }, { unique: true }),
+        pickupRequestsCollection.createIndex(
+          { agentEmail: 1, idempotencyKey: 1 },
+          { unique: true, partialFilterExpression: { idempotencyKey: { $type: "string" } }, name: "one_pickup_submission_per_idempotency_key" }
+        ),
         ticketRevisionsCollection.createIndex({ id: 1 }, { unique: true }),
         ticketRevisionsCollection.createIndex({ ticketId: 1, version: 1 }, { unique: true }),
         pickupDateRequestsCollection.createIndex({ id: 1 }, { unique: true }),
@@ -742,7 +752,7 @@ function auditActor(req) {
   return { role: "system", email: "" };
 }
 
-async function recordSecurityEvent(req, action, target = {}, metadata = {}) {
+async function recordSecurityEvent(req, action, target = {}, metadata = {}, options = {}) {
   if (!securityAuditLogCollection) throw new Error("MONGODB_URI is not configured.");
   await securityAuditLogCollection.insertOne({
     id: crypto.randomUUID(),
@@ -751,7 +761,25 @@ async function recordSecurityEvent(req, action, target = {}, metadata = {}) {
     actor: auditActor(req),
     target,
     metadata
-  });
+  }, options);
+}
+
+async function withDatabaseTransaction(work) {
+  if (process.env.NODE_ENV === "test") return work(undefined);
+  const session = mongoClient.startSession();
+  try {
+    let result;
+    await session.withTransaction(async () => {
+      result = await work(session);
+    }, {
+      readConcern: { level: "majority" },
+      writeConcern: { w: "majority", j: true, wtimeoutMS: 10000 },
+      readPreference: "primary"
+    });
+    return result;
+  } finally {
+    await session.endSession();
+  }
 }
 
 function createSignedSession(res, cookieName, payload) {
@@ -2565,7 +2593,8 @@ app.post(
       preferredDate,
       preferredTime,
       location,
-      notes
+      notes,
+      idempotencyKey: submittedIdempotencyKey
     } = req.body || {};
 
     const submittedRequestType = typeof requestType === "string" && requestType.trim()
@@ -2593,7 +2622,7 @@ app.post(
           String(
             item.quantity
           ).trim() &&
-          Number.isSafeInteger(Number(item.quantity)) &&
+          Number.isFinite(Number(item.quantity)) &&
           Number(item.quantity) >= 1 &&
           (
             isAgentPickup ||
@@ -2628,8 +2657,8 @@ app.post(
     if (!validGoods) {
       return res.status(400).json({
         error: isAgentPickup
-          ? "Add at least one good with a category and whole-number quantity."
-          : "Add at least one good with a category, whole-number quantity, and valid amount per item."
+          ? "Add at least one good with a category and quantity of at least 1."
+          : "Add at least one good with a category, quantity of at least 1, and valid amount per item."
       });
     }
 
@@ -2651,6 +2680,14 @@ app.post(
     }
     if (cleanPreferredDate && !(submittedRequestType === "agentPickup" ? isValidDateNotInPast(cleanPreferredDate) : isValidDateOnly(cleanPreferredDate))) {
       return res.status(400).json({ error: submittedRequestType === "agentPickup" ? "Choose a valid pickup date that is not in the past." : "Choose a valid pickup date." });
+    }
+    const idempotencyKey = validIdempotencyKey(submittedIdempotencyKey) ? submittedIdempotencyKey : "";
+    if (idempotencyKey) {
+      const existingRequest = withoutMongoId(await pickupRequestsCollection.findOne({ agentEmail: req.agent.email, idempotencyKey }));
+      if (existingRequest) {
+        const { agentEmail, ...request } = existingRequest;
+        return res.status(200).json({ message: "This submission was already saved.", emailSent: true, idempotentReplay: true, request });
+      }
     }
     const cleanedGoods =
       goods.map((item) => ({
@@ -2696,6 +2733,7 @@ app.post(
       preferredDate: cleanPreferredDate,
       location: isAgentPickup ? cleanLocation : "",
       notes: cleanNotes,
+      ...(idempotencyKey ? { idempotencyKey } : {}),
       status:
         "Pending approval",
       createdAt:
@@ -2705,6 +2743,13 @@ app.post(
     try {
       await pickupRequestsCollection.insertOne(savedRequest);
     } catch (error) {
+      if (error?.code === 11000 && idempotencyKey) {
+        const existingRequest = withoutMongoId(await pickupRequestsCollection.findOne({ agentEmail: req.agent.email, idempotencyKey }));
+        if (existingRequest) {
+          const { agentEmail, ...request } = existingRequest;
+          return res.status(200).json({ message: "This submission was already saved.", emailSent: true, idempotentReplay: true, request });
+        }
+      }
       console.error(
         "Pickup request storage failed:",
         error.message
@@ -2874,7 +2919,7 @@ app.put(
       && isAcceptedGoodName(item.name)
       && (typeof item.quantity === "number" || typeof item.quantity === "string")
       && String(item.quantity).trim()
-      && Number.isSafeInteger(Number(item.quantity))
+      && Number.isFinite(Number(item.quantity))
       && Number(item.quantity) >= 1
       && (typeof item.amount === "number" || typeof item.amount === "string")
       && String(item.amount).trim()
@@ -2884,7 +2929,7 @@ app.put(
 
     if (!validGoods) {
       return res.status(400).json({
-        error: "Add at least one good with a category, whole-number quantity, and valid amount per item."
+        error: "Add at least one good with a category, quantity of at least 1, and valid amount per item."
       });
     }
     if (invalidNotes) {
