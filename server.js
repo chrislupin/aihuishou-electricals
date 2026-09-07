@@ -318,8 +318,14 @@ function businessDateKey(value = new Date()) {
   return `${byType.year}-${byType.month}-${byType.day}`;
 }
 
-function isBusinessToday(value) {
-  return businessDateKey(value) === businessDateKey();
+function isWithinLastBusinessDays(value, days) {
+  const requestDate = businessDateKey(value);
+  const currentDate = businessDateKey();
+  if (!requestDate || !currentDate) return false;
+  const requestTime = Date.parse(`${requestDate}T00:00:00Z`);
+  const currentTime = Date.parse(`${currentDate}T00:00:00Z`);
+  const daysAgo = Math.round((currentTime - requestTime) / 86_400_000);
+  return daysAgo >= 0 && daysAgo < days;
 }
 
 function businessWeekStartKey(value = new Date()) {
@@ -1910,15 +1916,15 @@ app.get(
           );
 
       const isTicketHistory = requestedType === "agentTicket" || req.requestUserType === "fieldEmployee";
-      const todayRequests = isTicketHistory
-        ? agentRequests.filter((request) => isBusinessToday(request.createdAt))
+      const recentRequests = isTicketHistory
+        ? agentRequests.filter((request) => isWithinLastBusinessDays(request.createdAt, 7))
         : agentRequests;
       const olderRejectedTickets = isTicketHistory
-        ? agentRequests.filter((request) => !isBusinessToday(request.createdAt) && request.status === "Rejected")
+        ? agentRequests.filter((request) => !isWithinLastBusinessDays(request.createdAt, 7) && request.status === "Rejected")
         : [];
 
       return res.json({
-        requests: todayRequests,
+        requests: recentRequests,
         olderRejectedTickets,
         businessDate: businessDateKey()
       });
@@ -2623,7 +2629,7 @@ app.post(
             item.quantity
           ).trim() &&
           Number.isFinite(Number(item.quantity)) &&
-          Number(item.quantity) >= 1 &&
+          Number(item.quantity) > 0 &&
           (
             isAgentPickup ||
             (
@@ -2657,8 +2663,8 @@ app.post(
     if (!validGoods) {
       return res.status(400).json({
         error: isAgentPickup
-          ? "Add at least one good with a category and quantity of at least 1."
-          : "Add at least one good with a category, quantity of at least 1, and valid amount per item."
+          ? "Add at least one good with a category and quantity greater than 0."
+          : "Add at least one good with a category, quantity greater than 0, and valid amount per item."
       });
     }
 
@@ -2920,7 +2926,7 @@ app.put(
       && (typeof item.quantity === "number" || typeof item.quantity === "string")
       && String(item.quantity).trim()
       && Number.isFinite(Number(item.quantity))
-      && Number(item.quantity) >= 1
+      && Number(item.quantity) > 0
       && (typeof item.amount === "number" || typeof item.amount === "string")
       && String(item.amount).trim()
       && Number.isFinite(Number(item.amount))
@@ -2929,7 +2935,7 @@ app.put(
 
     if (!validGoods) {
       return res.status(400).json({
-        error: "Add at least one good with a category, quantity of at least 1, and valid amount per item."
+        error: "Add at least one good with a category, quantity greater than 0, and valid amount per item."
       });
     }
     if (invalidNotes) {

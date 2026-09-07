@@ -155,7 +155,7 @@ test("only the ticket owner can resubmit and the prior version is audited", asyn
   collection("pickup_requests").records.push({ id: "owner-ticket", agentEmail: owner.email, requestType: "agentTicket", status: "Rejected", goods: [{ name: "LCDs", quantity: 1, amount: 10, totalAmount: 10 }], notes: "old", createdAt: new Date().toISOString() });
   collection("pickup_requests").records.push({ id: "other-ticket", agentEmail: "other@example.com", requestType: "agentTicket", status: "Rejected", goods: [{ name: "LCDs", quantity: 1, amount: 10 }], createdAt: new Date().toISOString() });
   const ownerCookie = await login("/api/agent-login", owner.email, "owner-password", "agent_session");
-  const payload = JSON.stringify({ goods: [{ name: "Custom Sensor Board", quantity: 2.5, amount: 15 }], notes: "corrected" });
+  const payload = JSON.stringify({ goods: [{ name: "Custom Sensor Board", quantity: 0.5, amount: 15 }], notes: "corrected" });
   let result = await request("/api/pickup-requests/other-ticket/resubmit", { method: "PUT", headers: { cookie: ownerCookie, "content-type": "application/json" }, body: payload });
   assert.equal(result.response.status, 409);
   result = await request("/api/pickup-requests/owner-ticket/resubmit", { method: "PUT", headers: { cookie: ownerCookie, "content-type": "application/json" }, body: payload });
@@ -163,7 +163,7 @@ test("only the ticket owner can resubmit and the prior version is audited", asyn
   const resubmitted = await collection("pickup_requests").findOne({ id: "owner-ticket" });
   assert.equal(resubmitted.status, "Pending approval");
   assert.equal(resubmitted.goods[0].name, "Custom Sensor Board");
-  assert.equal(resubmitted.goods[0].quantity, 2.5);
+  assert.equal(resubmitted.goods[0].quantity, 0.5);
   assert.equal((await collection("ticket_revisions").findOne({ ticketId: "owner-ticket" })).notes, "old");
 });
 
@@ -180,10 +180,10 @@ test("agent and field-employee sessions remain role-specific", async () => {
   result = await request("/api/pickup-requests", {
     method: "POST",
     headers: { cookie: fieldCookie, "content-type": "application/json" },
-    body: JSON.stringify({ requestType: "fieldEmployee", goods: [{ name: "LCDs", quantity: 1.25, amount: 100 }] })
+    body: JSON.stringify({ requestType: "fieldEmployee", goods: [{ name: "LCDs", quantity: 0.25, amount: 100 }] })
   });
   assert.equal(result.response.status, 201);
-  assert.equal(result.body.request.goods[0].quantity, 1.25);
+  assert.equal(result.body.request.goods[0].quantity, 0.25);
 });
 
 test("admin creates accountant accounts but only accountants can approve tickets and pickup dates", async () => {
@@ -313,11 +313,12 @@ test("ticket history keeps older rejected tickets actionable and report filters 
   collection("agent_accounts").records.push(agent);
   collection("pickup_requests").records.push(
     { id: "old-rejected", agentEmail: agent.email, requestType: "agentTicket", status: "Rejected", goods: [{ name: "LCDs", quantity: 1, amount: 1 }], createdAt: "2020-01-01T10:00:00.000Z" },
+    { id: "week-ticket", agentEmail: agent.email, requestType: "agentTicket", status: "Approved", goods: [{ name: "LCDs", quantity: 1, amount: 1 }], createdAt: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString() },
     { id: "today-ticket", agentEmail: agent.email, requestType: "agentTicket", status: "Approved", goods: [{ name: "LCDs", quantity: 1, amount: 1 }], createdAt: new Date().toISOString() }
   );
   const agentCookie = await login("/api/agent-login", agent.email, "history-password", "agent_session");
   let result = await request("/api/pickup-requests?requestType=agentTicket", { headers: { cookie: agentCookie } });
-  assert.deepEqual(result.body.requests.map((item) => item.id), ["today-ticket"]);
+  assert.deepEqual(result.body.requests.map((item) => item.id), ["today-ticket", "week-ticket"]);
   assert.deepEqual(result.body.olderRejectedTickets.map((item) => item.id), ["old-rejected"]);
 
   const adminCookie = await login("/api/admin-login", "admin@example.com", "admin-password", "admin_session");
