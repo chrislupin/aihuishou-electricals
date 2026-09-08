@@ -284,8 +284,9 @@
         items.forEach((request) => {
           const agent = request.agent || {};
           const id = request.agentEmail || agent.email || 'unknown';
-          const person = people.get(id) || { name: agent.fullName || id, role: roleName(request), goods: new Map(), total: 0 };
+          const person = people.get(id) || { name: agent.fullName || id, role: roleName(request), goods: new Map(), ticketCount: 0, total: 0 };
           (request.goods || []).forEach((good) => person.goods.set(good.name, (person.goods.get(good.name) || 0) + (Number(good.quantity) || 0)));
+          person.ticketCount += 1;
           person.total += requestTotal(request);
           people.set(id, person);
         });
@@ -295,11 +296,11 @@
         }
         const table = document.createElement('table');
         table.className = 'summary';
-        table.innerHTML = '<thead><tr><th>Employee / agent</th><th>Role</th><th>Goods and total number</th><th>Combined amount</th></tr></thead>';
+        table.innerHTML = '<thead><tr><th>Employee / agent</th><th>Role</th><th>Tickets</th><th>Aggregated goods across selected tickets</th><th>Total across tickets</th></tr></thead>';
         const body = document.createElement('tbody');
         people.forEach((person) => {
           const row = document.createElement('tr');
-          [person.name, person.role, [...person.goods].map(([name, quantity]) => `${name}: ${quantity}`).join(', '), formatAmount(person.total)].forEach((value) => {
+          [person.name, person.role, person.ticketCount, [...person.goods].map(([name, quantity]) => `${name}: ${quantity}`).join(', '), formatAmount(person.total)].forEach((value) => {
             const cell = document.createElement('td');
             cell.textContent = value;
             row.append(cell);
@@ -395,7 +396,7 @@
       }
 
       function renderFiltersAndRequests() {
-        root.innerHTML = '<section class="filters"><label>Person <select id="person"><option value="">All employees and agents</option></select></label><label>Status <select id="status"><option value="all">All statuses</option><option value="Pending approval">Pending approval</option><option value="Approved">Approved</option><option value="Rejected">Rejected</option></select></label><label>From <input id="requestFrom" type="date" /></label><label>To <input id="requestTo" type="date" /></label></section>' + (viewName === 'overview' ? '<h2>Selected ticket summary</h2><div id="summary"></div><h2>Unapproved agent tickets</h2><div id="agents"></div><h2>Unapproved field employee tickets</h2><div id="fields"></div>' : '<p class="muted">All agent and field employee tickets are shown. Use the filters to narrow the list.</p><div id="results"></div>');
+        root.innerHTML = '<section class="filters"><label>Person <select id="person"><option value="">All employees and agents</option></select></label><label>Status <select id="status"><option value="all">All statuses</option><option value="Pending approval">Pending approval</option><option value="Approved">Approved</option><option value="Rejected">Rejected</option></select></label><label>From <input id="requestFrom" type="date" /></label><label>To <input id="requestTo" type="date" /></label></section>' + (viewName === 'overview' ? '<h2>Aggregate ticket summary</h2><p class="muted">This table combines all tickets matching the filters for each person. It is not an individual-order view; use the ticket list to inspect a specific ticket and its ID.</p><div id="summary"></div><h2>Unapproved agent tickets</h2><div id="agents"></div><h2>Unapproved field employee tickets</h2><div id="fields"></div>' : '<p class="muted">All agent and field employee tickets are shown. Use the filters to narrow the list.</p><div id="results"></div>');
         const personSelect = $('#person');
         accounts.forEach((account) => personSelect.add(new Option(`${account.fullName} — ${account.role === 'fieldEmployee' ? 'Field employee' : 'Agent'}`, account.email)));
         const statusSelect = $('#status');
