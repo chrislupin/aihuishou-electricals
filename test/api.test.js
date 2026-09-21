@@ -238,6 +238,11 @@ test("ticket submissions use the Nairobi weekday and Saturday cutoffs", async ()
   assert.equal(result.response.status, 403);
   assert.match(result.body.error, /5:01 PM/);
 
+  app.locals.ticketSubmissionTime = new Date("2026-09-21T14:01:00.000Z"); // Monday 5:01 PM Nairobi
+  result = await request("/api/pickup-requests", { method: "POST", headers: { cookie: agentCookie, "content-type": "application/json" }, body: JSON.stringify({ ...agentTicket, idempotencyKey: "agent-at-cutoff-1" }) });
+  assert.equal(result.response.status, 403);
+  assert.match(result.body.error, /at or after/);
+
   app.locals.ticketSubmissionTime = new Date("2026-09-21T13:02:00.000Z"); // Monday 4:02 PM Nairobi
   result = await request("/api/pickup-requests", { method: "POST", headers: { cookie: fieldCookie, "content-type": "application/json" }, body: JSON.stringify(fieldTicket) });
   assert.equal(result.response.status, 403);
@@ -256,6 +261,11 @@ test("ticket submissions use the Nairobi weekday and Saturday cutoffs", async ()
   app.locals.ticketSubmissionTime = new Date("2026-09-26T09:59:00.000Z"); // Saturday 12:59 PM Nairobi
   result = await request("/api/pickup-requests", { method: "POST", headers: { cookie: agentCookie, "content-type": "application/json" }, body: JSON.stringify({ ...agentTicket, idempotencyKey: "agent-before-cutoff" }) });
   assert.equal(result.response.status, 201);
+
+  app.locals.ticketSubmissionTime = new Date("2026-09-21T14:02:00.000Z"); // Monday 5:02 PM Nairobi
+  result = await request("/api/pickup-requests", { method: "POST", headers: { cookie: agentCookie, "content-type": "application/json" }, body: JSON.stringify({ ...agentTicket, idempotencyKey: "agent-before-cutoff" }) });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.idempotentReplay, true);
 
   collection("pickup_requests").records.push({ id: "cutoff-resubmission", agentEmail: agent.email, requestType: "agentTicket", status: "Rejected", goods: [{ name: "LCDs", quantity: 1, amount: 800 }], notes: "Needs correction." });
   app.locals.ticketSubmissionTime = new Date("2026-09-21T14:02:00.000Z"); // Monday 5:02 PM Nairobi

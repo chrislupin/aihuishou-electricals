@@ -366,11 +366,11 @@ function ticketSubmissionCutoffError(requestType, value = ticketSubmissionTime()
       ? (role === "agent" ? 17 * 60 + 1 : 16 * 60 + 1)
       : null;
 
-  if (cutoffMinute === null || minuteOfDay <= cutoffMinute) return "";
+  if (cutoffMinute === null || minuteOfDay < cutoffMinute) return "";
   const cutoff = weekday === "Sat"
     ? (role === "agent" ? "1:00 PM" : "3:00 PM")
     : (role === "agent" ? "5:01 PM" : "4:01 PM");
-  return `${role === "agent" ? "Agent" : "Field employee"} tickets cannot be submitted after ${cutoff} on ${weekday === "Sat" ? "Saturdays" : "Monday to Friday"} (Nairobi time).`;
+  return `${role === "agent" ? "Agent" : "Field employee"} tickets cannot be submitted at or after ${cutoff} on ${weekday === "Sat" ? "Saturdays" : "Monday to Friday"} (Nairobi time).`;
 }
 
 function isWithinLastBusinessDays(value, days) {
@@ -2830,11 +2830,6 @@ app.post(
       });
     }
 
-    const submissionCutoffError = ticketSubmissionCutoffError(submittedRequestType);
-    if (submissionCutoffError) {
-      return res.status(403).json({ error: submissionCutoffError });
-    }
-
     if (missingFields) {
       return res.status(400).json({
         error: "Complete the pickup location."
@@ -2866,6 +2861,10 @@ app.post(
     if (existingRequest) {
       const { agentEmail, ...request } = existingRequest;
       return res.status(200).json({ message: "This submission was already saved.", emailSent: true, idempotentReplay: true, request });
+    }
+    const submissionCutoffError = ticketSubmissionCutoffError(submittedRequestType);
+    if (submissionCutoffError) {
+      return res.status(403).json({ error: submissionCutoffError });
     }
     const cleanedGoods = goods.map((item) => {
       const name = item.name.trim();
