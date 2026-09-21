@@ -309,14 +309,11 @@
       }
 
       function downloadReport(items) {
-        const rows = [['Report type', controls.reportType.value === 'tickets' ? 'Approved tickets' : 'Pickup requests'], [], ['Name', 'Date', 'Good', 'Quantity', 'Line amount', 'Total amount']];
+        const rows = [['Report type', controls.reportType.value === 'tickets' ? 'Approved tickets' : 'Pickup requests'], []];
         const people = new Map();
         items.forEach((request) => {
           const key = request.agentEmail || `${personName(request)}|${roleLabel(request)}`;
-          const person = people.get(key) || { name: personName(request), role: roleLabel(request), requests: [], quantity: 0, total: 0, goods: new Map() };
-          person.requests.push(request);
-          person.quantity += requestQuantity(request);
-          person.total += requestTotal(request);
+          const person = people.get(key) || { name: personName(request), role: roleLabel(request), goods: new Map() };
           (request.goods || []).forEach((good) => {
             const goodName = good.name || 'Unnamed good';
             const subtotal = person.goods.get(goodName) || { quantity: 0, amount: 0 };
@@ -328,36 +325,24 @@
         });
         const groupedPeople = [...people.values()].sort((first, second) => first.name.localeCompare(second.name));
         const goodsTotals = new Map();
-        let total = 0;
         items.forEach((request) => {
-          const name = personName(request);
-          const date = reportDate(request.resubmittedAt || request.createdAt);
           const goods = Array.isArray(request.goods) ? request.goods : [];
-          if (!goods.length) {
-            rows.push([name, date, 'No goods recorded', '', '0.00', '']);
-          } else {
-            goods.forEach((good) => {
-              const goodName = good.name || 'Unnamed good';
-              const quantity = Number(good.quantity) || 0;
-              const amount = lineTotal(good);
-              rows.push([name, date, goodName, quantity, csvAmount(amount), '']);
-              const aggregate = goodsTotals.get(goodName) || { quantity: 0, amount: 0 };
-              aggregate.quantity += quantity;
-              aggregate.amount += amount;
-              goodsTotals.set(goodName, aggregate);
-            });
-          }
-          total += requestTotal(request);
+          goods.forEach((good) => {
+            const goodName = good.name || 'Unnamed good';
+            const quantity = Number(good.quantity) || 0;
+            const amount = lineTotal(good);
+            const aggregate = goodsTotals.get(goodName) || { quantity: 0, amount: 0 };
+            aggregate.quantity += quantity;
+            aggregate.amount += amount;
+            goodsTotals.set(goodName, aggregate);
+          });
         });
-        rows.push(['TOTAL AMOUNT', '', '', '', '', csvAmount(total)]);
-        rows.push([]);
         rows.push(['SUBTOTALS BY EMPLOYEE / AGENT', '', '', '', '', '']);
         rows.push(['Employee / agent', 'Role', 'Good', 'Total quantity', 'Total amount', '']);
         groupedPeople.forEach((person) => {
           [...person.goods.entries()].sort(([first], [second]) => first.localeCompare(second)).forEach(([name, subtotal]) => {
             rows.push([person.name, person.role, name, subtotal.quantity, csvAmount(subtotal.amount), '']);
           });
-          rows.push([`${person.name} TOTAL`, person.role, `All goods · ${person.requests.length} ticket${person.requests.length === 1 ? '' : 's'}`, person.quantity, csvAmount(person.total), '']);
         });
         rows.push([]);
         rows.push(['TOTALS BY GOOD', '', 'Good', 'Total quantity', 'Total amount', '']);
