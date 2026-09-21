@@ -248,7 +248,7 @@
           });
           actions.append(reject);
         }
-        if (portalRole === 'admin' && !pickup && ['Approved', 'Rejected'].includes(request.status)) {
+        if (!pickup && ['Approved', 'Rejected'].includes(request.status)) {
           const remove = document.createElement('button');
           remove.className = 'btn danger';
           remove.type = 'button';

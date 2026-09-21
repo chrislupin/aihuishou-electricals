@@ -2325,12 +2325,12 @@ app.get("/api/admin/pickup-requests/:id/revisions", requireOperationsViewer, asy
   }
 });
 
-app.delete("/api/admin/pickup-requests/:id", requireAdmin, async (req, res) => {
+app.delete("/api/admin/pickup-requests/:id", requireOperationsViewer, async (req, res) => {
   const deletionReason = applicationField(req.body?.reason, 500);
   if (!deletionReason) return res.status(400).json({ error: "A deletion reason is required." });
 
   try {
-    // Finalized operational tickets may be removed only by an administrator.
+    // Administrators and accountants may remove finalized operational tickets.
     // Pickup requests and tickets awaiting review must remain available.
     const ticket = withoutMongoId(await pickupRequestsCollection.findOne({
       id: req.params.id,

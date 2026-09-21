@@ -120,6 +120,12 @@ function cookie(response, name) {
   return `${name}=${match[1]}`;
 }
 
+function signedSessionCookie(name, payload) {
+  const body = Buffer.from(JSON.stringify({ ...payload, expiresAt: Date.now() + 60 * 60 * 1000 })).toString("base64url");
+  const signature = crypto.createHmac("sha256", process.env.SESSION_SECRET).update(body).digest("base64url");
+  return `${name}=${body}.${signature}`;
+}
+
 async function login(path, email, password, cookieName) {
   const { response } = await request(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email, password }) });
   assert.equal(response.status, 200);
@@ -384,10 +390,13 @@ test("ticket history keeps older rejected tickets actionable and report filters 
   assert.deepEqual(result.body.requests.map((item) => item.id), ["friday-resubmitted-saturday"]);
 });
 
-test("only administrators can delete finalized tickets", async () => {
+test("administrators and accountants can delete finalized tickets", async () => {
   const adminCookie = await login("/api/admin-login", "admin@example.com", "admin-password", "admin_session");
+  collection("agent_accounts").records.push(passwordAccount("delete-accountant@example.com", "accountant-password", { role: "accountant" }));
+  const accountantCookie = signedSessionCookie("accountant_session", { email: "delete-accountant@example.com", role: "accountant", sessionVersion: 0 });
   collection("pickup_requests").records.push(
     { id: "approved-delete", agentEmail: "owner@example.com", requestType: "agentTicket", status: "Approved", createdAt: new Date().toISOString() },
+    { id: "accountant-delete", agentEmail: "owner@example.com", requestType: "fieldEmployee", status: "Rejected", createdAt: new Date().toISOString() },
     { id: "pending-keep", agentEmail: "owner@example.com", requestType: "agentTicket", status: "Pending approval", createdAt: new Date().toISOString() }
   );
   collection("ticket_revisions").records.push({ id: "approved-delete-revision", ticketId: "approved-delete", version: 1 });
@@ -402,10 +411,15 @@ test("only administrators can delete finalized tickets", async () => {
   assert.equal(result.response.status, 200);
   assert.equal(await collection("pickup_requests").findOne({ id: "approved-delete" }), null);
   assert.equal(await collection("ticket_revisions").findOne({ ticketId: "approved-delete" }), null);
+  result = await request("/api/admin/pickup-requests/accountant-delete", { method: "DELETE", headers: { cookie: accountantCookie, "content-type": "application/json" }, body: JSON.stringify({ reason: "Duplicate entry" }) });
+  assert.equal(result.response.status, 200);
+  assert.equal(await collection("pickup_requests").findOne({ id: "accountant-delete" }), null);
   const audit = await collection("security_audit_log").findOne({ action: "ticket.deleted" });
   assert.equal(audit.actor.email, "admin@example.com");
   assert.equal(audit.target.id, "approved-delete");
   assert.equal(audit.metadata.reason, "Confirmed duplicate ticket");
+  const accountantAudit = collection("security_audit_log").records.find((event) => event.action === "ticket.deleted" && event.target.id === "accountant-delete");
+  assert.equal(accountantAudit.actor.email, "delete-accountant@example.com");
   result = await request("/api/admin/security-audit");
   assert.equal(result.response.status, 401);
   result = await request("/api/admin/security-audit", { headers: { cookie: adminCookie } });
