@@ -253,10 +253,13 @@
           remove.type = 'button';
           remove.textContent = 'Delete ticket';
           remove.addEventListener('click', async () => {
+            const reason = prompt('Reason for deleting this ticket:');
+            if (reason === null) return;
+            if (!reason.trim()) { alert('A deletion reason is required.'); return; }
             if (!confirm('Delete this finalized ticket and its revision history? This cannot be undone.')) return;
             remove.disabled = true;
             try {
-              const response = await fetch(`/api/admin/pickup-requests/${encodeURIComponent(request.id)}`, { method: 'DELETE' });
+              const response = await fetch(`/api/admin/pickup-requests/${encodeURIComponent(request.id)}`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason }) });
               const result = await response.json().catch(() => ({}));
               if (!response.ok) throw new Error(result.error || 'Unable to delete this ticket.');
               load();

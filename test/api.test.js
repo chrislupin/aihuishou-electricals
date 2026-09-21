@@ -189,8 +189,24 @@ test("agent and field-employee sessions remain role-specific", async () => {
     headers: { cookie: fieldCookie, "content-type": "application/json" },
     body: JSON.stringify({ requestType: "fieldEmployee", goods: [{ name: "LCDs", quantity: 0.25, amount: 100 }], notes: "Collected from the service desk." })
   });
+  assert.equal(result.response.status, 400);
+  assert.match(result.body.error, /retry token/);
+  const fieldSubmission = { requestType: "fieldEmployee", goods: [{ name: "LCDs", quantity: 0.25, amount: 100 }], notes: "Collected from the service desk.", idempotencyKey: "field-submission-key" };
+  result = await request("/api/pickup-requests", {
+    method: "POST",
+    headers: { cookie: fieldCookie, "content-type": "application/json" },
+    body: JSON.stringify(fieldSubmission)
+  });
   assert.equal(result.response.status, 201);
   assert.equal(result.body.request.goods[0].quantity, 0.25);
+  result = await request("/api/pickup-requests", {
+    method: "POST",
+    headers: { cookie: fieldCookie, "content-type": "application/json" },
+    body: JSON.stringify(fieldSubmission)
+  });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.idempotentReplay, true);
+  assert.equal(collection("pickup_requests").records.filter((item) => item.idempotencyKey === "field-submission-key").length, 1);
 });
 
 test("admin creates accountant accounts but only accountants can approve tickets and pickup dates", async () => {
@@ -348,9 +364,15 @@ test("only administrators can delete finalized tickets", async () => {
   let result = await request("/api/admin/pickup-requests/approved-delete", { method: "DELETE" });
   assert.equal(result.response.status, 401);
   result = await request("/api/admin/pickup-requests/pending-keep", { method: "DELETE", headers: { cookie: adminCookie } });
+  assert.equal(result.response.status, 400);
+  result = await request("/api/admin/pickup-requests/pending-keep", { method: "DELETE", headers: { cookie: adminCookie, "content-type": "application/json" }, body: JSON.stringify({ reason: "Duplicate entry" }) });
   assert.equal(result.response.status, 404);
-  result = await request("/api/admin/pickup-requests/approved-delete", { method: "DELETE", headers: { cookie: adminCookie } });
+  result = await request("/api/admin/pickup-requests/approved-delete", { method: "DELETE", headers: { cookie: adminCookie, "content-type": "application/json" }, body: JSON.stringify({ reason: "Confirmed duplicate ticket" }) });
   assert.equal(result.response.status, 200);
   assert.equal(await collection("pickup_requests").findOne({ id: "approved-delete" }), null);
   assert.equal(await collection("ticket_revisions").findOne({ ticketId: "approved-delete" }), null);
+  const audit = await collection("security_audit_log").findOne({ action: "ticket.deleted" });
+  assert.equal(audit.actor.email, "admin@example.com");
+  assert.equal(audit.target.id, "approved-delete");
+  assert.equal(audit.metadata.reason, "Confirmed duplicate ticket");
 });

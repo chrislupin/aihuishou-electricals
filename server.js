@@ -2266,6 +2266,9 @@ app.get("/api/admin/pickup-requests/:id/revisions", requireOperationsViewer, asy
 });
 
 app.delete("/api/admin/pickup-requests/:id", requireAdmin, async (req, res) => {
+  const deletionReason = applicationField(req.body?.reason, 500);
+  if (!deletionReason) return res.status(400).json({ error: "A deletion reason is required." });
+
   try {
     // Finalized operational tickets may be removed only by an administrator.
     // Pickup requests and tickets awaiting review must remain available.
@@ -2284,7 +2287,18 @@ app.delete("/api/admin/pickup-requests/:id", requireAdmin, async (req, res) => {
     if (!deletion.deletedCount) return res.status(409).json({ error: "This ticket is no longer available to delete." });
 
     await ticketRevisionsCollection.deleteMany({ ticketId: ticket.id });
-    await recordSecurityEvent(req, "ticket.deleted", { id: ticket.id, agentEmail: ticket.agentEmail }, { status: ticket.status });
+    await recordSecurityEvent(
+      req,
+      "ticket.deleted",
+      { id: ticket.id, agentEmail: ticket.agentEmail },
+      {
+        reason: deletionReason,
+        status: ticket.status,
+        requestType: ticket.requestType,
+        totalAmount: calculateRequestTotal(ticket.goods),
+        revisionCount: Number(ticket.revisionCount) || 0
+      }
+    );
     return res.json({ message: "Ticket deleted." });
   } catch (error) {
     console.error("Ticket deletion failed:", error.message);
@@ -2731,13 +2745,14 @@ app.post(
     if (cleanPreferredDate && !(submittedRequestType === "agentPickup" ? isValidDateNotInPast(cleanPreferredDate) : isValidDateOnly(cleanPreferredDate))) {
       return res.status(400).json({ error: submittedRequestType === "agentPickup" ? "Choose a valid pickup date that is not in the past." : "Choose a valid pickup date." });
     }
-    const idempotencyKey = validIdempotencyKey(submittedIdempotencyKey) ? submittedIdempotencyKey : "";
-    if (idempotencyKey) {
-      const existingRequest = withoutMongoId(await pickupRequestsCollection.findOne({ agentEmail: req.agent.email, idempotencyKey }));
-      if (existingRequest) {
-        const { agentEmail, ...request } = existingRequest;
-        return res.status(200).json({ message: "This submission was already saved.", emailSent: true, idempotentReplay: true, request });
-      }
+    if (!validIdempotencyKey(submittedIdempotencyKey)) {
+      return res.status(400).json({ error: "This submission is missing a valid retry token. Refresh the dashboard and try again." });
+    }
+    const idempotencyKey = submittedIdempotencyKey;
+    const existingRequest = withoutMongoId(await pickupRequestsCollection.findOne({ agentEmail: req.agent.email, idempotencyKey }));
+    if (existingRequest) {
+      const { agentEmail, ...request } = existingRequest;
+      return res.status(200).json({ message: "This submission was already saved.", emailSent: true, idempotentReplay: true, request });
     }
     const cleanedGoods =
       goods.map((item) => ({
@@ -2783,7 +2798,7 @@ app.post(
       preferredDate: cleanPreferredDate,
       location: isAgentPickup ? cleanLocation : "",
       notes: cleanNotes,
-      ...(idempotencyKey ? { idempotencyKey } : {}),
+      idempotencyKey,
       status:
         "Pending approval",
       createdAt:
@@ -2793,7 +2808,7 @@ app.post(
     try {
       await pickupRequestsCollection.insertOne(savedRequest);
     } catch (error) {
-      if (error?.code === 11000 && idempotencyKey) {
+      if (error?.code === 11000) {
         const existingRequest = withoutMongoId(await pickupRequestsCollection.findOne({ agentEmail: req.agent.email, idempotencyKey }));
         if (existingRequest) {
           const { agentEmail, ...request } = existingRequest;
