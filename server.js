@@ -31,7 +31,21 @@ const app = express();
 const emailTo = "aihuishoulimited@gmail.com";
 const scrypt = promisify(crypto.scrypt);
 const sessionSecret = process.env.SESSION_SECRET || (process.env.NODE_ENV === "production" ? "" : crypto.randomBytes(32).toString("hex"));
-const GOODS_OPTIONS = new Set(['LCDs','Yellow Boards','512GB 2 ICE','512GB 3 ICE','256GB 2 ICE','256GB 3 ICE','128GB 2 ICE','128GB 3 ICE','64GB 2 ICE','64GB 3 ICE','32GB 2 ICE','32GB 3 ICE','16GB','8GB','4GB','CHINESE HIGH GRADE','CHINESE LOW GRADE','TABLET','BIGSMART','IPHONE','CPU','DISPLAY CARDS','BATTERY','HARD DISK','HARD DISK BOARD','RAMS','CAMERA','LAPTOP BOARD','LAPTOP LOW GRADE','ORIGINAL PHONES','COMPUTER 1 ICE','COMPUTER 2 ICE','GREEN BOARD HIGH GRADE','RUBBISH','RUBBISH HIGH GRADE','PRINTERS','CAR BOARD']);
+const GOODS_PRICES = Object.freeze({
+  'LCDs': 800, '512GB 2 ICE': 2400, '512GB 3 ICE': 1900,
+  '256GB 2 ICE': 2400, '256GB 3 ICE': 1900, '128GB 2 ICE': 1700,
+  '128GB 3 ICE': 1300, '64GB 2 ICE': 1300, '64GB 3 ICE': 1000,
+  '32GB 2 ICE': 650, '32GB 3 ICE': 550, '16GB': 280, '8GB': 150,
+  '4GB': 70, 'CHINESE HIGH GRADE': 50, 'CHINESE LOW GRADE': 40,
+  'TABLET': 40, 'BIGSMART': 40, 'IPHONE': 100, 'CPU GOLD': 500,
+  'CPU NO GOLD': 35, 'DISPLAY CARDS': 700, 'SOFT BATTERY': 300,
+  'HARD BATTERY': 150, 'HARD DISK': 300, 'HARD DISK BOARD': 1000,
+  'CAMERA': 11000, 'LAPTOP BOARD': 4000, 'LAPTOP LOW GRADE': 1300,
+  'ORIGINAL PHONES': 10000, 'COMPUTER GLASS': 400, 'COMPUTER 1 ICE': 1000,
+  'COMPUTER 2 ICE': 1800, 'GREEN BOARD HIGH GRADE': 1300, 'RUBBISH': 300,
+  'RUBBISH HIGH GRADE': 700, 'PRINTERS': 1000, 'CAR BOARD': 500
+});
+const GOODS_OPTIONS = new Set([...Object.keys(GOODS_PRICES), 'RAMS']);
 const MAX_PASSWORD_LENGTH = 256;
 const BUSINESS_TIMEZONE = "Africa/Nairobi";
 
@@ -2814,14 +2828,11 @@ app.post(
       const { agentEmail, ...request } = existingRequest;
       return res.status(200).json({ message: "This submission was already saved.", emailSent: true, idempotentReplay: true, request });
     }
-    const cleanedGoods =
-      goods.map((item) => ({
-        name: item.name.trim(),
-        quantity:
-          Number(item.quantity),
-        amount: isAgentPickup ? 0 : Number(item.amount),
-        totalAmount: isAgentPickup ? 0 : Number(item.amount) * Number(item.quantity)
-      }));
+    const cleanedGoods = goods.map((item) => {
+      const name = item.name.trim();
+      const amount = isAgentPickup ? 0 : (GOODS_PRICES[name] ?? Number(item.amount));
+      return { name, quantity: Number(item.quantity), amount, totalAmount: isAgentPickup ? 0 : amount * Number(item.quantity) };
+    });
 
     const goodsText =
       cleanedGoods
@@ -3092,12 +3103,11 @@ app.put(
       return res.status(400).json({ error: "Notes are required." });
     }
 
-    const cleanedGoods = goods.map((item) => ({
-      name: item.name.trim(),
-      quantity: Number(item.quantity),
-      amount: Number(item.amount),
-      totalAmount: Number(item.amount) * Number(item.quantity)
-    }));
+    const cleanedGoods = goods.map((item) => {
+      const name = item.name.trim();
+      const amount = GOODS_PRICES[name] ?? Number(item.amount);
+      return { name, quantity: Number(item.quantity), amount, totalAmount: amount * Number(item.quantity) };
+    });
     const now = new Date().toISOString();
 
     try {
