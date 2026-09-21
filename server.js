@@ -169,6 +169,7 @@ const publicPageFiles = new Set([
   "admin-login.html",
   "admin-dashboard.html",
   "admin-analysis.html",
+  "admin-audit.html",
   "accountant-login.html",
   "accountant-signup.html",
   "password-reset.html"
@@ -1744,6 +1745,65 @@ async function sendRejectedAgentEmail(application) {
   });
 }
 
+function requestNotificationLabel(request) {
+  if (request?.requestType === "fieldEmployee") return "field ticket";
+  if (request?.requestType === "agentTicket") return "agent ticket";
+  return "pickup request";
+}
+
+async function sendRequestStatusEmail(request, status, rejectionReason = "") {
+  const goods = Array.isArray(request?.goods) ? request.goods : [];
+  const goodsSummary = goods.length
+    ? goods.map((item) => `${item.name || "Unnamed good"}: ${Number(item.quantity) || 0}`).join(", ")
+    : "No goods recorded";
+  const label = requestNotificationLabel(request);
+  const approved = status === "Approved";
+
+  await transporter.sendMail({
+    from: process.env.SMTP_FROM || process.env.SMTP_USER,
+    to: request.agentEmail,
+    subject: `Your Aihuishou ${label} has been ${approved ? "approved" : "rejected"}`,
+    text: [
+      "Hello,",
+      "",
+      `Your ${label} has been ${approved ? "approved" : "rejected"}.`,
+      `Order ID: ${request.id}`,
+      `Goods: ${goodsSummary}`,
+      ...(approved
+        ? ["", "Our operations team will proceed with the next steps."]
+        : ["", `Reason: ${rejectionReason || "No reason was provided."}`, "Please update and resubmit the ticket if necessary."]),
+      "",
+      "Aihuishou Electricals"
+    ].join("\n")
+  });
+}
+
+async function recordRequestDecisionOutcome(req, request, action, statusEmailSent) {
+  const statusEmailStatus = statusEmailSent ? "Sent" : "Failed";
+  try {
+    await pickupRequestsCollection.updateOne(
+      { id: request.id },
+      { $set: { statusEmailStatus, statusEmailSentAt: statusEmailSent ? new Date().toISOString() : "" } }
+    );
+  } catch (error) {
+    // The decision is already final. A metadata write must not make the UI
+    // report a completed approval or rejection as failed.
+    console.error("Request notification status update failed:", error.message);
+  }
+  try {
+    await recordSecurityEvent(
+      req,
+      action,
+      { id: request.id, agentEmail: request.agentEmail },
+      { statusEmailStatus }
+    );
+  } catch (error) {
+    // Audit recording is retriable operational work, not a prerequisite for
+    // preserving a finalized decision.
+    console.error("Request decision audit recording failed:", error.message);
+  }
+}
+
 app.post("/api/agent-applications", requestLimiter, rejectBotSubmission, async (req, res) => {
   const firstName = applicationField(req.body?.firstName, 80);
   const lastName = applicationField(req.body?.lastName, 80);
@@ -2905,11 +2965,19 @@ app.post(
         return res.status(409).json({ error: "This request is no longer pending approval." });
       }
 
-      await recordSecurityEvent(req, "pickup_request.approved", { id: request.id, agentEmail: request.agentEmail });
+      let statusEmailSent = true;
+      try {
+        await sendRequestStatusEmail(request, "Approved");
+      } catch (mailError) {
+        statusEmailSent = false;
+        console.error("Pickup request approval email failed:", mailError.message);
+      }
+      await recordRequestDecisionOutcome(req, request, "pickup_request.approved", statusEmailSent);
 
       return res.json({
         message:
-          "Pickup request approved.",
+          statusEmailSent ? "Pickup request approved and notification email sent." : "Pickup request approved, but the notification email could not be sent.",
+        emailSent: statusEmailSent,
         request
       });
     } catch (error) {
@@ -2938,6 +3006,16 @@ app.post(
       // Pickup requests have their own scheduling workflow. This action is
       // deliberately limited to operational tickets submitted by agents and
       // field employees.
+      const request = withoutMongoId(await pickupRequestsCollection.findOne({
+        id: req.params.id,
+        requestType: { $in: ["agentTicket", "fieldEmployee"] },
+        status: "Pending approval"
+      }));
+      if (!request) {
+        return res.status(409).json({ error: "Only pending tickets can be rejected." });
+      }
+
+      const rejectedAt = new Date().toISOString();
       const result = await pickupRequestsCollection.updateOne(
         {
           id: req.params.id,
@@ -2947,7 +3025,7 @@ app.post(
         {
           $set: {
             status: "Rejected",
-            rejectedAt: new Date().toISOString(),
+            rejectedAt,
             rejectedBy: req.accountant.email,
             rejectionReason
           }
@@ -2958,8 +3036,18 @@ app.post(
         return res.status(409).json({ error: "Only pending tickets can be rejected." });
       }
 
-      await recordSecurityEvent(req, "pickup_request.rejected", { id: req.params.id });
-      return res.json({ message: "Ticket rejected. Its owner can edit and resubmit it." });
+      let statusEmailSent = true;
+      try {
+        await sendRequestStatusEmail(request, "Rejected", rejectionReason);
+      } catch (mailError) {
+        statusEmailSent = false;
+        console.error("Ticket rejection email failed:", mailError.message);
+      }
+      await recordRequestDecisionOutcome(req, request, "pickup_request.rejected", statusEmailSent);
+      return res.json({
+        message: statusEmailSent ? "Ticket rejected and notification email sent. Its owner can edit and resubmit it." : "Ticket rejected, but the notification email could not be sent. Its owner can edit and resubmit it.",
+        emailSent: statusEmailSent
+      });
     } catch (error) {
       console.error("Ticket rejection failed:", error.message);
       return res.status(500).json({ error: "Unable to reject ticket." });

@@ -78,7 +78,13 @@ const collection = (name) => {
 collection("migrations").records.push({ name: "json-to-mongodb-v1" }, { name: "ticket-revisions-v1" });
 
 const nodemailer = require("nodemailer");
-nodemailer.createTransport = () => ({ sendMail: async () => ({ messageId: "test" }) });
+const sentEmails = [];
+let mailShouldFail = false;
+nodemailer.createTransport = () => ({ sendMail: async (message) => {
+  if (mailShouldFail) throw new Error("SMTP unavailable");
+  sentEmails.push(clone(message));
+  return { messageId: "test" };
+} });
 const { MongoClient } = require("mongodb");
 MongoClient.prototype.connect = async function connect() { return this; };
 MongoClient.prototype.db = () => ({ collection, command: async () => ({ ok: 1 }) });
@@ -125,6 +131,8 @@ test.after(async () => new Promise((resolve) => server.close(resolve)));
 
 test("only approved browser files are publicly served", async () => {
   let response = await rawRequest("/index.html");
+  assert.equal(response.status, 200);
+  response = await rawRequest("/admin-audit.html");
   assert.equal(response.status, 200);
   response = await rawRequest("/images/company-logo.png");
   assert.equal(response.status, 200);
@@ -232,6 +240,21 @@ test("admin creates accountant accounts but only accountants can approve tickets
   result = await request("/api/admin/pickup-requests/accountant-ticket/approve", { method: "POST", headers: { cookie: accountantCookie } });
   assert.equal(result.response.status, 200);
   assert.equal((await collection("pickup_requests").findOne({ id: "accountant-ticket" })).approvedBy, "accountant@example.com");
+  assert.equal((await collection("pickup_requests").findOne({ id: "accountant-ticket" })).statusEmailStatus, "Sent");
+  assert.ok(sentEmails.some((email) => email.to === "owner@example.com" && email.subject.includes("approved")));
+  collection("pickup_requests").records.push({ id: "reject-ticket", agentEmail: "owner@example.com", requestType: "agentTicket", status: "Pending approval", goods: [{ name: "LCDs", quantity: 1, amount: 10 }], createdAt: new Date().toISOString() });
+  result = await request("/api/admin/pickup-requests/reject-ticket/reject", { method: "POST", headers: { cookie: accountantCookie, "content-type": "application/json" }, body: JSON.stringify({ reason: "Incorrect quantity" }) });
+  assert.equal(result.response.status, 200);
+  assert.equal((await collection("pickup_requests").findOne({ id: "reject-ticket" })).statusEmailStatus, "Sent");
+  assert.ok(sentEmails.some((email) => email.to === "owner@example.com" && email.subject.includes("rejected") && email.text.includes("Incorrect quantity")));
+  collection("pickup_requests").records.push({ id: "email-failure-ticket", agentEmail: "owner@example.com", requestType: "agentTicket", status: "Pending approval", goods: [{ name: "LCDs", quantity: 1, amount: 10 }], createdAt: new Date().toISOString() });
+  mailShouldFail = true;
+  result = await request("/api/admin/pickup-requests/email-failure-ticket/approve", { method: "POST", headers: { cookie: accountantCookie } });
+  mailShouldFail = false;
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.emailSent, false);
+  assert.equal((await collection("pickup_requests").findOne({ id: "email-failure-ticket" })).status, "Approved");
+  assert.equal((await collection("pickup_requests").findOne({ id: "email-failure-ticket" })).statusEmailStatus, "Failed");
   collection("pickup_date_requests").records.push({ id: "accountant-date", agentEmail: "owner@example.com", requestedDate: businessDateKey(), status: "Pending approval", active: true, createdAt: new Date().toISOString() });
   result = await request("/api/admin/pickup-date-requests", { headers: { cookie: adminCookie } });
   assert.equal(result.response.status, 200);
@@ -375,4 +398,9 @@ test("only administrators can delete finalized tickets", async () => {
   assert.equal(audit.actor.email, "admin@example.com");
   assert.equal(audit.target.id, "approved-delete");
   assert.equal(audit.metadata.reason, "Confirmed duplicate ticket");
+  result = await request("/api/admin/security-audit");
+  assert.equal(result.response.status, 401);
+  result = await request("/api/admin/security-audit", { headers: { cookie: adminCookie } });
+  assert.equal(result.response.status, 200);
+  assert.ok(result.body.events.some((event) => event.id === audit.id));
 });

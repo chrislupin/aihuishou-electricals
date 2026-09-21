@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Audit log | Aihuishou</title>
+    <link rel="stylesheet" href="styles.css" />
+    <style>
+      * { box-sizing: border-box; }
+      body { margin: 0; font-family: system-ui, sans-serif; }
+      .app { display: grid; grid-template-columns: 255px 1fr; min-height: 100vh; }
+      .side { padding: 25px 18px; background: var(--blue-deep); }
+      .side img { width: 150px; height: 58px; object-fit: contain; }
+      .nav { display: grid; gap: 8px; margin-top: 28px; }
+      .nav a { padding: 12px; border-radius: 8px; color: #dcecff; text-decoration: none; font-size: 14px; font-weight: 700; }
+      .nav a.active, .nav a:hover { background: #ffffff24; color: #fff; }
+      .page { width: min(1240px, calc(100% - 40px)); margin: 0 auto; padding: 28px 0 60px; }
+      .header, .toolbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; flex-wrap: wrap; }
+      .eyebrow { margin: 0 0 6px; color: var(--orange); font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+      h1 { margin: 0; color: var(--blue-deep); font-size: clamp(32px, 5vw, 46px); letter-spacing: -1.8px; }
+      .muted, .count { color: var(--muted); }
+      .toolbar { align-items: end; margin: 26px 0 14px; }
+      .filter { display: grid; gap: 6px; min-width: min(100%, 370px); }
+      .filter label { color: var(--blue-deep); font-size: 12px; font-weight: 800; }
+      input, .btn { min-height: 40px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; font: inherit; }
+      input { background: #f8fcff; color: var(--ink); }
+      .btn { background: #fff; color: var(--blue-deep); cursor: pointer; font-weight: 700; }
+      .btn:hover { border-color: var(--orange); }
+      .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; background: #fff; box-shadow: 0 10px 24px #14538812; }
+      table { width: 100%; min-width: 950px; border-collapse: collapse; }
+      th, td { padding: 14px; border-bottom: 1px solid var(--line); vertical-align: top; text-align: left; }
+      th { background: #f4faff; color: var(--muted); font-size: 11px; letter-spacing: .05em; text-transform: uppercase; }
+      td { color: var(--ink); font-size: 13px; }
+      tbody tr:hover { background: #f8fcff; }
+      .detail { display: grid; gap: 4px; min-width: 220px; }
+      .detail b { color: var(--blue-deep); }
+      .empty { padding: 22px; border: 1px dashed var(--line); border-radius: 12px; color: var(--muted); text-align: center; }
+      @media (max-width: 760px) { .app { grid-template-columns: 1fr; } .side { padding: 14px; } .nav { grid-template-columns: repeat(2, 1fr); margin-top: 8px; } .page { width: min(100% - 28px, 1240px); } }
+    </style>
+  </head>
+  <body>
+    <main class="app">
+      <aside class="side">
+        <a href="admin-dashboard.html"><img src="images/company-logo.png" alt="Aihuishou Electricals" /></a>
+        <nav class="nav">
+          <a href="admin-dashboard.html">Overview &amp; unapproved</a>
+          <a href="admin-dashboard.html?view=applications">Agent applications</a>
+          <a href="admin-dashboard.html?view=pickup-dates">Pickup dates approval</a>
+          <a href="admin-dashboard.html?view=approved-fields">Ticket Center</a>
+          <a href="admin-dashboard.html?view=accounts">Manage accounts</a>
+          <a href="admin-analysis.html">Analysis</a>
+          <a class="active" href="admin-audit.html">Audit log</a>
+        </nav>
+      </aside>
+      <section class="page">
+        <header class="header">
+          <div>
+            <p class="eyebrow">Administrator only</p>
+            <h1>Audit log</h1>
+            <p class="muted">Review up to 500 of the latest recorded actions, including ticket deletions.</p>
+          </div>
+          <button class="btn" id="logout" type="button">Log out</button>
+        </header>
+        <section class="toolbar" aria-label="Audit log controls">
+          <div class="filter"><label for="search">Search</label><input id="search" type="search" placeholder="Action, email, ticket ID, reason or amount" /></div>
+          <span class="count" id="count"></span>
+        </section>
+        <div id="results" aria-live="polite"></div>
+      </section>
+    </main>
+    <script>
+      const $ = (selector) => document.querySelector(selector);
+      let events = [];
+      const displayDate = (value) => {
+        const date = new Date(value);
+        return Number.isNaN(date.getTime()) ? 'Unknown date' : new Intl.DateTimeFormat('en-KE', { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+      };
+      const detailLines = (details) => Object.entries(details || {}).filter(([, value]) => value !== '' && value !== null && typeof value !== 'undefined');
+      const addDetail = (cell, details) => {
+        const wrap = document.createElement('div');
+        wrap.className = 'detail';
+        const lines = detailLines(details);
+        if (!lines.length) wrap.textContent = '—';
+        lines.forEach(([label, value]) => {
+          const line = document.createElement('div');
+          const key = document.createElement('b');
+          key.textContent = `${label}: `;
+          line.append(key, document.createTextNode(typeof value === 'object' ? JSON.stringify(value) : String(value)));
+          wrap.append(line);
+        });
+        cell.append(wrap);
+      };
+      function render() {
+        const query = $('#search').value.trim().toLocaleLowerCase();
+        const filtered = events.filter((event) => JSON.stringify(event).toLocaleLowerCase().includes(query));
+        $('#count').textContent = `${filtered.length.toLocaleString('en-KE')} event${filtered.length === 1 ? '' : 's'} shown`;
+        const target = $('#results');
+        if (!filtered.length) {
+          target.replaceChildren(Object.assign(document.createElement('div'), { className: 'empty', textContent: query ? 'No audit events match your search.' : 'No audit events have been recorded yet.' }));
+          return;
+        }
+        const table = document.createElement('table');
+        table.innerHTML = '<thead><tr><th>Recorded</th><th>Action</th><th>Performed by</th><th>Target</th><th>Details</th></tr></thead>';
+        const body = document.createElement('tbody');
+        filtered.forEach((event) => {
+          const row = document.createElement('tr');
+          [displayDate(event.createdAt), event.action || 'Unknown action', `${event.actor?.email || 'System'} (${event.actor?.role || 'system'})`].forEach((value) => {
+            const cell = document.createElement('td');
+            cell.textContent = value;
+            row.append(cell);
+          });
+          const target = document.createElement('td');
+          addDetail(target, event.target);
+          row.append(target);
+          const metadata = document.createElement('td');
+          addDetail(metadata, event.metadata);
+          row.append(metadata);
+          body.append(row);
+        });
+        table.append(body);
+        const wrap = document.createElement('div');
+        wrap.className = 'table-wrap';
+        wrap.append(table);
+        target.replaceChildren(wrap);
+      }
+      async function load() {
+        const session = await fetch('/api/admin-session');
+        if (!session.ok) return location.assign('admin-login.html');
+        try {
+          const response = await fetch('/api/admin/security-audit');
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || 'Unable to load the audit log.');
+          events = data.events || [];
+          render();
+        } catch (error) {
+          $('#results').replaceChildren(Object.assign(document.createElement('div'), { className: 'empty', textContent: error.message || 'Unable to load the audit log.' }));
+        }
+      }
+      $('#search').addEventListener('input', render);
+      $('#logout').addEventListener('click', async () => { await fetch('/api/admin-logout', { method: 'POST' }); location.assign('admin-login.html'); });
+      load();
+    </script>
+  </body>
+</html>
