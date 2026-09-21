@@ -334,6 +334,13 @@ function isWithinLastBusinessDays(value, days) {
   return daysAgo >= 0 && daysAgo < days;
 }
 
+// A resubmission starts a new review cycle.  Use that cycle's timestamp when
+// deciding which business day a ticket belongs to, while keeping createdAt as
+// the immutable record of its original submission.
+function ticketActivityAt(request) {
+  return request?.resubmittedAt || request?.createdAt;
+}
+
 function businessWeekStartKey(value = new Date()) {
   const key = businessDateKey(value);
   if (!key) return "";
@@ -1908,10 +1915,10 @@ app.get(
           .sort(
             (first, second) =>
               new Date(
-                second.createdAt
+                ticketActivityAt(second)
               ) -
               new Date(
-                first.createdAt
+                ticketActivityAt(first)
               )
           )
           .map(
@@ -1923,10 +1930,10 @@ app.get(
 
       const isTicketHistory = requestedType === "agentTicket" || req.requestUserType === "fieldEmployee";
       const recentRequests = isTicketHistory
-        ? agentRequests.filter((request) => isWithinLastBusinessDays(request.createdAt, 7))
+        ? agentRequests.filter((request) => isWithinLastBusinessDays(ticketActivityAt(request), 7))
         : agentRequests;
       const olderRejectedTickets = isTicketHistory
-        ? agentRequests.filter((request) => !isWithinLastBusinessDays(request.createdAt, 7) && request.status === "Rejected")
+        ? agentRequests.filter((request) => !isWithinLastBusinessDays(ticketActivityAt(request), 7) && request.status === "Rejected")
         : [];
 
       return res.json({
@@ -2163,10 +2170,10 @@ app.get(
           .sort(
             (first, second) =>
               new Date(
-                second.createdAt
+                ticketActivityAt(second)
               ) -
               new Date(
-                first.createdAt
+                ticketActivityAt(first)
               )
           )
           .map((request) => {
@@ -2211,7 +2218,7 @@ app.get(
         if (role === "agent" && request.requestType === "fieldEmployee") return false;
         if (role === "fieldEmployee" && request.requestType !== "fieldEmployee") return false;
         if (person && normalizeEmail(request.agentEmail) !== person) return false;
-        return matchesAdminReportDate(request.createdAt, range, from, to);
+        return matchesAdminReportDate(ticketActivityAt(request), range, from, to);
       });
 
       return res.json({
@@ -2255,6 +2262,33 @@ app.get("/api/admin/pickup-requests/:id/revisions", requireOperationsViewer, asy
   } catch (error) {
     console.error("Ticket revision lookup failed:", error.message);
     return res.status(500).json({ error: "Unable to load ticket revisions." });
+  }
+});
+
+app.delete("/api/admin/pickup-requests/:id", requireAdmin, async (req, res) => {
+  try {
+    // Finalized operational tickets may be removed only by an administrator.
+    // Pickup requests and tickets awaiting review must remain available.
+    const ticket = withoutMongoId(await pickupRequestsCollection.findOne({
+      id: req.params.id,
+      requestType: { $in: ["agentTicket", "fieldEmployee"] },
+      status: { $in: ["Approved", "Rejected"] }
+    }));
+    if (!ticket) return res.status(404).json({ error: "An approved or rejected ticket was not found." });
+
+    const deletion = await pickupRequestsCollection.deleteOne({
+      id: ticket.id,
+      requestType: { $in: ["agentTicket", "fieldEmployee"] },
+      status: { $in: ["Approved", "Rejected"] }
+    });
+    if (!deletion.deletedCount) return res.status(409).json({ error: "This ticket is no longer available to delete." });
+
+    await ticketRevisionsCollection.deleteMany({ ticketId: ticket.id });
+    await recordSecurityEvent(req, "ticket.deleted", { id: ticket.id, agentEmail: ticket.agentEmail }, { status: ticket.status });
+    return res.json({ message: "Ticket deleted." });
+  } catch (error) {
+    console.error("Ticket deletion failed:", error.message);
+    return res.status(500).json({ error: "Unable to delete ticket." });
   }
 });
 

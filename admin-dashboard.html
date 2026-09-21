@@ -169,7 +169,7 @@
         const top = document.createElement('div'); top.className = 'request-top';
         const titleBlock = document.createElement('div');
         const title = document.createElement('h3'); title.textContent = requestName(request);
-        const created = document.createElement('p'); created.className = 'muted'; created.textContent = formatDate(request.createdAt);
+        const created = document.createElement('p'); created.className = 'muted'; created.textContent = formatDate(!pickup && request.resubmittedAt ? request.resubmittedAt : request.createdAt);
         titleBlock.append(title, created);
         const badge = document.createElement('span'); badge.className = `badge${request.status === 'Approved' ? ' approved' : request.status === 'Rejected' ? ' rejected' : ''}`; badge.textContent = request.status || 'Pending approval';
         top.append(titleBlock, badge);
@@ -246,6 +246,26 @@
             load();
           });
           actions.append(reject);
+        }
+        if (portalRole === 'admin' && !pickup && ['Approved', 'Rejected'].includes(request.status)) {
+          const remove = document.createElement('button');
+          remove.className = 'btn danger';
+          remove.type = 'button';
+          remove.textContent = 'Delete ticket';
+          remove.addEventListener('click', async () => {
+            if (!confirm('Delete this finalized ticket and its revision history? This cannot be undone.')) return;
+            remove.disabled = true;
+            try {
+              const response = await fetch(`/api/admin/pickup-requests/${encodeURIComponent(request.id)}`, { method: 'DELETE' });
+              const result = await response.json().catch(() => ({}));
+              if (!response.ok) throw new Error(result.error || 'Unable to delete this ticket.');
+              load();
+            } catch (error) {
+              alert(error.message || 'Unable to delete this ticket.');
+              remove.disabled = false;
+            }
+          });
+          actions.append(remove);
         }
         if (!pickup && request.revisionCount) {
           const revisions = document.createElement('button');

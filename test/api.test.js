@@ -320,15 +320,37 @@ test("ticket history keeps older rejected tickets actionable and report filters 
   collection("agent_accounts").records.push(agent);
   collection("pickup_requests").records.push(
     { id: "old-rejected", agentEmail: agent.email, requestType: "agentTicket", status: "Rejected", goods: [{ name: "LCDs", quantity: 1, amount: 1 }], createdAt: "2020-01-01T10:00:00.000Z" },
+    { id: "friday-resubmitted-saturday", agentEmail: agent.email, requestType: "agentTicket", status: "Pending approval", goods: [{ name: "LCDs", quantity: 1, amount: 1 }], createdAt: "2026-09-18T10:00:00.000Z", resubmittedAt: "2026-09-19T10:00:00.000Z" },
     { id: "week-ticket", agentEmail: agent.email, requestType: "agentTicket", status: "Approved", goods: [{ name: "LCDs", quantity: 1, amount: 1 }], createdAt: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString() },
     { id: "today-ticket", agentEmail: agent.email, requestType: "agentTicket", status: "Approved", goods: [{ name: "LCDs", quantity: 1, amount: 1 }], createdAt: new Date().toISOString() }
   );
   const agentCookie = await login("/api/agent-login", agent.email, "history-password", "agent_session");
   let result = await request("/api/pickup-requests?requestType=agentTicket", { headers: { cookie: agentCookie } });
-  assert.deepEqual(result.body.requests.map((item) => item.id), ["today-ticket", "week-ticket"]);
+  assert.deepEqual(result.body.requests.map((item) => item.id), ["today-ticket", "friday-resubmitted-saturday", "week-ticket"]);
   assert.deepEqual(result.body.olderRejectedTickets.map((item) => item.id), ["old-rejected"]);
 
   const adminCookie = await login("/api/admin-login", "admin@example.com", "admin-password", "admin_session");
   result = await request(`/api/admin/pickup-requests?reportType=tickets&status=Approved&range=daily&from=${today}&to=${today}&person=${encodeURIComponent(agent.email)}`, { headers: { cookie: adminCookie } });
   assert.deepEqual(result.body.requests.map((item) => item.id), ["today-ticket"]);
+
+  result = await request(`/api/admin/pickup-requests?reportType=tickets&status=Pending%20approval&range=custom&from=2026-09-19&to=2026-09-19&person=${encodeURIComponent(agent.email)}`, { headers: { cookie: adminCookie } });
+  assert.deepEqual(result.body.requests.map((item) => item.id), ["friday-resubmitted-saturday"]);
+});
+
+test("only administrators can delete finalized tickets", async () => {
+  const adminCookie = await login("/api/admin-login", "admin@example.com", "admin-password", "admin_session");
+  collection("pickup_requests").records.push(
+    { id: "approved-delete", agentEmail: "owner@example.com", requestType: "agentTicket", status: "Approved", createdAt: new Date().toISOString() },
+    { id: "pending-keep", agentEmail: "owner@example.com", requestType: "agentTicket", status: "Pending approval", createdAt: new Date().toISOString() }
+  );
+  collection("ticket_revisions").records.push({ id: "approved-delete-revision", ticketId: "approved-delete", version: 1 });
+
+  let result = await request("/api/admin/pickup-requests/approved-delete", { method: "DELETE" });
+  assert.equal(result.response.status, 401);
+  result = await request("/api/admin/pickup-requests/pending-keep", { method: "DELETE", headers: { cookie: adminCookie } });
+  assert.equal(result.response.status, 404);
+  result = await request("/api/admin/pickup-requests/approved-delete", { method: "DELETE", headers: { cookie: adminCookie } });
+  assert.equal(result.response.status, 200);
+  assert.equal(await collection("pickup_requests").findOne({ id: "approved-delete" }), null);
+  assert.equal(await collection("ticket_revisions").findOne({ ticketId: "approved-delete" }), null);
 });
