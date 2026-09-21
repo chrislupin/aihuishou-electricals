@@ -310,6 +310,26 @@
 
       function downloadReport(items) {
         const rows = [['Report type', controls.reportType.value === 'tickets' ? 'Approved tickets' : 'Pickup requests'], []];
+        rows.push(['ALL ORDERS', '', '', '', '', '', '', '']);
+        rows.push(['Employee / agent', 'Role', 'Order ID', 'Date', 'Good', 'Quantity', 'Unit price', 'Line amount']);
+        items.forEach((request) => {
+          const goods = Array.isArray(request.goods) ? request.goods : [];
+          const orderDetails = [personName(request), roleLabel(request), request.id || '', reportDate(request.resubmittedAt || request.createdAt)];
+          if (!goods.length) {
+            rows.push([...orderDetails, 'No goods recorded', '', '', '']);
+            return;
+          }
+          goods.forEach((good) => {
+            rows.push([
+              ...orderDetails,
+              good.name || 'Unnamed good',
+              Number(good.quantity) || 0,
+              csvAmount(good.amount),
+              csvAmount(lineTotal(good))
+            ]);
+          });
+        });
+        rows.push([]);
         const people = new Map();
         items.forEach((request) => {
           const key = request.agentEmail || `${personName(request)}|${roleLabel(request)}`;
