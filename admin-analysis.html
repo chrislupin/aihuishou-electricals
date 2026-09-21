@@ -313,10 +313,17 @@
         const people = new Map();
         items.forEach((request) => {
           const key = request.agentEmail || `${personName(request)}|${roleLabel(request)}`;
-          const person = people.get(key) || { name: personName(request), role: roleLabel(request), requests: [], quantity: 0, total: 0 };
+          const person = people.get(key) || { name: personName(request), role: roleLabel(request), requests: [], quantity: 0, total: 0, goods: new Map() };
           person.requests.push(request);
           person.quantity += requestQuantity(request);
           person.total += requestTotal(request);
+          (request.goods || []).forEach((good) => {
+            const goodName = good.name || 'Unnamed good';
+            const subtotal = person.goods.get(goodName) || { quantity: 0, amount: 0 };
+            subtotal.quantity += Number(good.quantity) || 0;
+            subtotal.amount += lineTotal(good);
+            person.goods.set(goodName, subtotal);
+          });
           people.set(key, person);
         });
         const groupedPeople = [...people.values()].sort((first, second) => first.name.localeCompare(second.name));
@@ -344,9 +351,13 @@
         });
         rows.push(['TOTAL AMOUNT', '', '', '', '', csvAmount(total)]);
         rows.push([]);
-        rows.push(['SUBTOTALS BY EMPLOYEE / AGENT', 'Role', 'Tickets', 'Total quantity', 'Total amount', '']);
+        rows.push(['SUBTOTALS BY EMPLOYEE / AGENT', '', '', '', '', '']);
+        rows.push(['Employee / agent', 'Role', 'Good', 'Total quantity', 'Total amount', '']);
         groupedPeople.forEach((person) => {
-          rows.push([person.name, person.role, person.requests.length, person.quantity, csvAmount(person.total), '']);
+          [...person.goods.entries()].sort(([first], [second]) => first.localeCompare(second)).forEach(([name, subtotal]) => {
+            rows.push([person.name, person.role, name, subtotal.quantity, csvAmount(subtotal.amount), '']);
+          });
+          rows.push([`${person.name} TOTAL`, person.role, `All goods · ${person.requests.length} ticket${person.requests.length === 1 ? '' : 's'}`, person.quantity, csvAmount(person.total), '']);
         });
         rows.push([]);
         rows.push(['TOTALS BY GOOD', '', 'Good', 'Total quantity', 'Total amount', '']);
