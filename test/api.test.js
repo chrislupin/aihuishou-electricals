@@ -91,6 +91,7 @@ MongoClient.prototype.db = () => ({ collection, command: async () => ({ ok: 1 })
 
 const app = require("../server");
 const server = http.createServer(app);
+app.locals.ticketSubmissionTime = new Date("2026-09-21T09:00:00.000Z"); // Monday, noon in Nairobi
 
 function businessDateKey(value = new Date()) {
   const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Nairobi", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(value);
@@ -221,6 +222,47 @@ test("agent and field-employee sessions remain role-specific", async () => {
   assert.equal(result.response.status, 200);
   assert.equal(result.body.idempotentReplay, true);
   assert.equal(collection("pickup_requests").records.filter((item) => item.idempotencyKey === "field-submission-key").length, 1);
+});
+
+test("ticket submissions use the Nairobi weekday and Saturday cutoffs", async () => {
+  const agent = passwordAccount("cutoff-agent@example.com", "agent-password");
+  const field = passwordAccount("cutoff-field@example.com", "field-password", { role: "fieldEmployee" });
+  collection("agent_accounts").records.push(agent, field);
+  const agentCookie = signedSessionCookie("agent_session", { email: agent.email, role: "agent", sessionVersion: 0 });
+  const fieldCookie = signedSessionCookie("field_employee_session", { email: field.email, role: "fieldEmployee", sessionVersion: 0 });
+  const agentTicket = { requestType: "agentTicket", goods: [{ name: "LCDs", quantity: 1, amount: 1 }], notes: "Cutoff test.", idempotencyKey: "agent-cutoff-weekday" };
+  const fieldTicket = { requestType: "fieldEmployee", goods: [{ name: "LCDs", quantity: 1, amount: 1 }], notes: "Cutoff test.", idempotencyKey: "field-cutoff-weekday" };
+
+  app.locals.ticketSubmissionTime = new Date("2026-09-21T14:02:00.000Z"); // Monday 5:02 PM Nairobi
+  let result = await request("/api/pickup-requests", { method: "POST", headers: { cookie: agentCookie, "content-type": "application/json" }, body: JSON.stringify(agentTicket) });
+  assert.equal(result.response.status, 403);
+  assert.match(result.body.error, /5:01 PM/);
+
+  app.locals.ticketSubmissionTime = new Date("2026-09-21T13:02:00.000Z"); // Monday 4:02 PM Nairobi
+  result = await request("/api/pickup-requests", { method: "POST", headers: { cookie: fieldCookie, "content-type": "application/json" }, body: JSON.stringify(fieldTicket) });
+  assert.equal(result.response.status, 403);
+  assert.match(result.body.error, /4:01 PM/);
+
+  app.locals.ticketSubmissionTime = new Date("2026-09-26T10:01:00.000Z"); // Saturday 1:01 PM Nairobi
+  result = await request("/api/pickup-requests", { method: "POST", headers: { cookie: agentCookie, "content-type": "application/json" }, body: JSON.stringify({ ...agentTicket, idempotencyKey: "agent-cutoff-saturday" }) });
+  assert.equal(result.response.status, 403);
+  assert.match(result.body.error, /1:00 PM/);
+
+  app.locals.ticketSubmissionTime = new Date("2026-09-26T12:01:00.000Z"); // Saturday 3:01 PM Nairobi
+  result = await request("/api/pickup-requests", { method: "POST", headers: { cookie: fieldCookie, "content-type": "application/json" }, body: JSON.stringify({ ...fieldTicket, idempotencyKey: "field-cutoff-saturday" }) });
+  assert.equal(result.response.status, 403);
+  assert.match(result.body.error, /3:00 PM/);
+
+  app.locals.ticketSubmissionTime = new Date("2026-09-26T09:59:00.000Z"); // Saturday 12:59 PM Nairobi
+  result = await request("/api/pickup-requests", { method: "POST", headers: { cookie: agentCookie, "content-type": "application/json" }, body: JSON.stringify({ ...agentTicket, idempotencyKey: "agent-before-cutoff" }) });
+  assert.equal(result.response.status, 201);
+
+  collection("pickup_requests").records.push({ id: "cutoff-resubmission", agentEmail: agent.email, requestType: "agentTicket", status: "Rejected", goods: [{ name: "LCDs", quantity: 1, amount: 800 }], notes: "Needs correction." });
+  app.locals.ticketSubmissionTime = new Date("2026-09-21T14:02:00.000Z"); // Monday 5:02 PM Nairobi
+  result = await request("/api/pickup-requests/cutoff-resubmission/resubmit", { method: "PUT", headers: { cookie: agentCookie, "content-type": "application/json" }, body: JSON.stringify({ goods: [{ name: "LCDs", quantity: 1, amount: 800 }], notes: "Corrected." }) });
+  assert.equal(result.response.status, 403);
+  assert.match(result.body.error, /5:01 PM/);
+  app.locals.ticketSubmissionTime = new Date("2026-09-21T09:00:00.000Z");
 });
 
 test("admin creates accountant accounts but only accountants can approve tickets and pickup dates", async () => {

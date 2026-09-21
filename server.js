@@ -339,6 +339,40 @@ function businessDateKey(value = new Date()) {
   return `${byType.year}-${byType.month}-${byType.day}`;
 }
 
+function ticketSubmissionTime() {
+  // Tests inject a fixed clock so their result does not depend on the time of
+  // day they run. This value is never read outside the test environment.
+  const testTime = process.env.NODE_ENV === "test" ? app.locals.ticketSubmissionTime : null;
+  return testTime instanceof Date ? testTime : new Date();
+}
+
+function ticketSubmissionCutoffError(requestType, value = ticketSubmissionTime()) {
+  const role = requestType === "fieldEmployee" ? "field employee" : requestType === "agentTicket" ? "agent" : "";
+  if (!role) return "";
+
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: BUSINESS_TIMEZONE,
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23"
+  }).formatToParts(value);
+  const byType = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const weekday = byType.weekday;
+  const minuteOfDay = Number(byType.hour) * 60 + Number(byType.minute);
+  const cutoffMinute = weekday === "Sat"
+    ? (role === "agent" ? 13 * 60 : 15 * 60)
+    : ["Mon", "Tue", "Wed", "Thu", "Fri"].includes(weekday)
+      ? (role === "agent" ? 17 * 60 + 1 : 16 * 60 + 1)
+      : null;
+
+  if (cutoffMinute === null || minuteOfDay <= cutoffMinute) return "";
+  const cutoff = weekday === "Sat"
+    ? (role === "agent" ? "1:00 PM" : "3:00 PM")
+    : (role === "agent" ? "5:01 PM" : "4:01 PM");
+  return `${role === "agent" ? "Agent" : "Field employee"} tickets cannot be submitted after ${cutoff} on ${weekday === "Sat" ? "Saturdays" : "Monday to Friday"} (Nairobi time).`;
+}
+
 function isWithinLastBusinessDays(value, days) {
   const requestDate = businessDateKey(value);
   const currentDate = businessDateKey();
@@ -2796,6 +2830,11 @@ app.post(
       });
     }
 
+    const submissionCutoffError = ticketSubmissionCutoffError(submittedRequestType);
+    if (submissionCutoffError) {
+      return res.status(403).json({ error: submissionCutoffError });
+    }
+
     if (missingFields) {
       return res.status(400).json({
         error: "Complete the pickup location."
@@ -3101,6 +3140,11 @@ app.put(
     }
     if (!cleanNotes) {
       return res.status(400).json({ error: "Notes are required." });
+    }
+
+    const submissionCutoffError = ticketSubmissionCutoffError(allowedType);
+    if (submissionCutoffError) {
+      return res.status(403).json({ error: submissionCutoffError });
     }
 
     const cleanedGoods = goods.map((item) => {
