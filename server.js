@@ -43,6 +43,12 @@ if (process.env.MONGODB_URI) {
       serverSelectionTimeoutMS: 10000,
       connectTimeoutMS: 10000,
       maxPoolSize: 10,
+      // Some corporate DNS resolvers map Atlas SRV records through aliases.
+      // Allow deployments to supply the canonical Atlas hostname for TLS SNI
+      // without weakening certificate validation.
+      ...(process.env.MONGODB_TLS_SERVERNAME
+        ? { servername: process.env.MONGODB_TLS_SERVERNAME.trim() }
+        : {}),
       writeConcern: { w: "majority", j: true, wtimeoutMS: 10000 }
     });
   } catch (error) {
@@ -2678,6 +2684,10 @@ app.post(
       return res.status(400).json({ error: "Notes must be plain text and no longer than 1,000 characters." });
     }
 
+    if (!cleanNotes) {
+      return res.status(400).json({ error: "Notes are required." });
+    }
+
     // `preferredTime` is accepted but ignored for one release so older cached
     // dashboards can still create tickets while clients migrate to dates.
     const cleanPreferredDate = typeof preferredDate === "string" ? preferredDate.trim() : "";
@@ -2940,6 +2950,9 @@ app.put(
     }
     if (invalidNotes) {
       return res.status(400).json({ error: "Notes must be plain text and no longer than 1,000 characters." });
+    }
+    if (!cleanNotes) {
+      return res.status(400).json({ error: "Notes are required." });
     }
 
     const cleanedGoods = goods.map((item) => ({

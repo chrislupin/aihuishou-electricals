@@ -174,13 +174,20 @@ test("agent and field-employee sessions remain role-specific", async () => {
   const agentCookie = await login("/api/agent-login", agent.email, "agent-password", "agent_session");
   let result = await request("/api/agent-session", { headers: { cookie: agentCookie } });
   assert.equal(result.response.status, 200);
+  result = await request("/api/pickup-requests", {
+    method: "POST",
+    headers: { cookie: agentCookie, "content-type": "application/json" },
+    body: JSON.stringify({ requestType: "agentPickup", goods: [{ name: "LCDs", quantity: 1 }], location: "Nairobi", preferredDate: businessDateKey() })
+  });
+  assert.equal(result.response.status, 400);
+  assert.equal(result.body.error, "Notes are required.");
   const fieldCookie = await login("/api/field-employee-login", field.email, "field-password", "field_employee_session");
   result = await request("/api/field-employee-session", { headers: { cookie: fieldCookie } });
   assert.equal(result.response.status, 200);
   result = await request("/api/pickup-requests", {
     method: "POST",
     headers: { cookie: fieldCookie, "content-type": "application/json" },
-    body: JSON.stringify({ requestType: "fieldEmployee", goods: [{ name: "LCDs", quantity: 0.25, amount: 100 }] })
+    body: JSON.stringify({ requestType: "fieldEmployee", goods: [{ name: "LCDs", quantity: 0.25, amount: 100 }], notes: "Collected from the service desk." })
   });
   assert.equal(result.response.status, 201);
   assert.equal(result.body.request.goods[0].quantity, 0.25);
