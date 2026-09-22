@@ -47,6 +47,10 @@ const GOODS_PRICES = Object.freeze({
   'YELLOW MIX': 1000
 });
 const GOODS_OPTIONS = new Set([...Object.keys(GOODS_PRICES), 'RAMS']);
+const PRICE_OVERRIDE_AGENT_EMAIL = "lukusaalain483@gmail.com";
+function canSetGoodsPrices(agent) {
+  return normalizeEmail(agent?.email) === PRICE_OVERRIDE_AGENT_EMAIL;
+}
 const MAX_PASSWORD_LENGTH = 256;
 const BUSINESS_TIMEZONE = "Africa/Nairobi";
 
@@ -1230,7 +1234,8 @@ app.get(
         fullName:
           req.agent.fullName,
         phone: req.agent.phone,
-        email: req.agent.email
+        email: req.agent.email,
+        canSetGoodsPrices: canSetGoodsPrices(req.agent)
       }
     });
   }
@@ -2869,7 +2874,9 @@ app.post(
     }
     const cleanedGoods = goods.map((item) => {
       const name = item.name.trim();
-      const amount = isAgentPickup ? 0 : (GOODS_PRICES[name] ?? Number(item.amount));
+      const amount = isAgentPickup || !canSetGoodsPrices(req.agent)
+        ? (isAgentPickup ? 0 : (GOODS_PRICES[name] ?? Number(item.amount)))
+        : Number(item.amount);
       return { name, quantity: Number(item.quantity), amount, totalAmount: isAgentPickup ? 0 : amount * Number(item.quantity) };
     });
 
@@ -3149,7 +3156,9 @@ app.put(
 
     const cleanedGoods = goods.map((item) => {
       const name = item.name.trim();
-      const amount = GOODS_PRICES[name] ?? Number(item.amount);
+      const amount = canSetGoodsPrices(req.agent)
+        ? Number(item.amount)
+        : (GOODS_PRICES[name] ?? Number(item.amount));
       return { name, quantity: Number(item.quantity), amount, totalAmount: amount * Number(item.quantity) };
     });
     const now = new Date().toISOString();
