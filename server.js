@@ -48,7 +48,10 @@ const GOODS_PRICES = Object.freeze({
 });
 const GOODS_OPTIONS = new Set([...Object.keys(GOODS_PRICES), 'RAMS']);
 const PRICE_OVERRIDE_AGENT_EMAIL = "lukusaalain483@gmail.com";
-const TICKET_SUBMISSION_CUTOFF_EXEMPT_EMAILS = new Set([PRICE_OVERRIDE_AGENT_EMAIL]);
+const TICKET_SUBMISSION_CUTOFF_EXEMPT_EMAILS = new Set([
+  "lukusaalain483@gmail.com",
+  "bhativicent@gmail.com"
+]);
 function canSetGoodsPrices(agent) {
   return normalizeEmail(agent?.email) === PRICE_OVERRIDE_AGENT_EMAIL;
 }
