@@ -48,6 +48,7 @@ const GOODS_PRICES = Object.freeze({
 });
 const GOODS_OPTIONS = new Set([...Object.keys(GOODS_PRICES), 'RAMS']);
 const PRICE_OVERRIDE_AGENT_EMAIL = "lukusaalain483@gmail.com";
+const TICKET_SUBMISSION_CUTOFF_EXEMPT_EMAILS = new Set([PRICE_OVERRIDE_AGENT_EMAIL]);
 function canSetGoodsPrices(agent) {
   return normalizeEmail(agent?.email) === PRICE_OVERRIDE_AGENT_EMAIL;
 }
@@ -351,7 +352,9 @@ function ticketSubmissionTime() {
   return testTime instanceof Date ? testTime : new Date();
 }
 
-function ticketSubmissionCutoffError(requestType, value = ticketSubmissionTime()) {
+function ticketSubmissionCutoffError(requestType, agent, value = ticketSubmissionTime()) {
+  if (TICKET_SUBMISSION_CUTOFF_EXEMPT_EMAILS.has(normalizeEmail(agent?.email))) return "";
+
   const role = requestType === "fieldEmployee" ? "field employee" : requestType === "agentTicket" ? "agent" : "";
   if (!role) return "";
 
@@ -2868,7 +2871,7 @@ app.post(
       const { agentEmail, ...request } = existingRequest;
       return res.status(200).json({ message: "This submission was already saved.", emailSent: true, idempotentReplay: true, request });
     }
-    const submissionCutoffError = ticketSubmissionCutoffError(submittedRequestType);
+    const submissionCutoffError = ticketSubmissionCutoffError(submittedRequestType, req.agent);
     if (submissionCutoffError) {
       return res.status(403).json({ error: submissionCutoffError });
     }
@@ -3149,7 +3152,7 @@ app.put(
       return res.status(400).json({ error: "Notes are required." });
     }
 
-    const submissionCutoffError = ticketSubmissionCutoffError(allowedType);
+    const submissionCutoffError = ticketSubmissionCutoffError(allowedType, req.agent);
     if (submissionCutoffError) {
       return res.status(403).json({ error: submissionCutoffError });
     }

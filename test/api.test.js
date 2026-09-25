@@ -226,9 +226,11 @@ test("agent and field-employee sessions remain role-specific", async () => {
 
 test("ticket submissions use the Nairobi weekday and Saturday cutoffs", async () => {
   const agent = passwordAccount("cutoff-agent@example.com", "agent-password");
+  const cutoffExemptAgent = passwordAccount("lukusaalain483@gmail.com", "exempt-agent-password");
   const field = passwordAccount("cutoff-field@example.com", "field-password", { role: "fieldEmployee" });
-  collection("agent_accounts").records.push(agent, field);
+  collection("agent_accounts").records.push(agent, cutoffExemptAgent, field);
   const agentCookie = signedSessionCookie("agent_session", { email: agent.email, role: "agent", sessionVersion: 0 });
+  const cutoffExemptAgentCookie = signedSessionCookie("agent_session", { email: cutoffExemptAgent.email, role: "agent", sessionVersion: 0 });
   const fieldCookie = signedSessionCookie("field_employee_session", { email: field.email, role: "fieldEmployee", sessionVersion: 0 });
   const agentTicket = { requestType: "agentTicket", goods: [{ name: "LCDs", quantity: 1, amount: 1 }], notes: "Cutoff test.", idempotencyKey: "agent-cutoff-weekday" };
   const fieldTicket = { requestType: "fieldEmployee", goods: [{ name: "LCDs", quantity: 1, amount: 1 }], notes: "Cutoff test.", idempotencyKey: "field-cutoff-weekday" };
@@ -237,6 +239,9 @@ test("ticket submissions use the Nairobi weekday and Saturday cutoffs", async ()
   let result = await request("/api/pickup-requests", { method: "POST", headers: { cookie: agentCookie, "content-type": "application/json" }, body: JSON.stringify(agentTicket) });
   assert.equal(result.response.status, 403);
   assert.match(result.body.error, /5:01 PM/);
+
+  result = await request("/api/pickup-requests", { method: "POST", headers: { cookie: cutoffExemptAgentCookie, "content-type": "application/json" }, body: JSON.stringify({ ...agentTicket, idempotencyKey: "cutoff-exempt-agent" }) });
+  assert.equal(result.response.status, 201);
 
   app.locals.ticketSubmissionTime = new Date("2026-09-21T14:01:00.000Z"); // Monday 5:01 PM Nairobi
   result = await request("/api/pickup-requests", { method: "POST", headers: { cookie: agentCookie, "content-type": "application/json" }, body: JSON.stringify({ ...agentTicket, idempotencyKey: "agent-at-cutoff-1" }) });
@@ -422,24 +427,30 @@ test("disabling an account revokes its session, and exports and resets are audit
 test("ticket history keeps older rejected tickets actionable and report filters use Nairobi dates", async () => {
   const agent = passwordAccount("history@example.com", "history-password");
   const today = businessDateKey();
+  const businessDateDaysAgo = (days) => {
+    const date = new Date(`${today}T12:00:00.000Z`);
+    date.setUTCDate(date.getUTCDate() - days);
+    return date.toISOString().slice(0, 10);
+  };
+  const resubmittedDate = businessDateDaysAgo(2);
   collection("agent_accounts").records.push(agent);
   collection("pickup_requests").records.push(
     { id: "old-rejected", agentEmail: agent.email, requestType: "agentTicket", status: "Rejected", goods: [{ name: "LCDs", quantity: 1, amount: 1 }], createdAt: "2020-01-01T10:00:00.000Z" },
-    { id: "friday-resubmitted-saturday", agentEmail: agent.email, requestType: "agentTicket", status: "Pending approval", goods: [{ name: "LCDs", quantity: 1, amount: 1 }], createdAt: "2026-09-18T10:00:00.000Z", resubmittedAt: "2026-09-19T10:00:00.000Z" },
-    { id: "week-ticket", agentEmail: agent.email, requestType: "agentTicket", status: "Approved", goods: [{ name: "LCDs", quantity: 1, amount: 1 }], createdAt: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString() },
-    { id: "today-ticket", agentEmail: agent.email, requestType: "agentTicket", status: "Approved", goods: [{ name: "LCDs", quantity: 1, amount: 1 }], createdAt: new Date().toISOString() }
+    { id: "resubmitted-ticket", agentEmail: agent.email, requestType: "agentTicket", status: "Pending approval", goods: [{ name: "LCDs", quantity: 1, amount: 1 }], createdAt: `${businessDateDaysAgo(3)}T10:00:00.000Z`, resubmittedAt: `${resubmittedDate}T10:00:00.000Z` },
+    { id: "week-ticket", agentEmail: agent.email, requestType: "agentTicket", status: "Approved", goods: [{ name: "LCDs", quantity: 1, amount: 1 }], createdAt: `${businessDateDaysAgo(4)}T10:00:00.000Z` },
+    { id: "today-ticket", agentEmail: agent.email, requestType: "agentTicket", status: "Approved", goods: [{ name: "LCDs", quantity: 1, amount: 1 }], createdAt: `${today}T12:00:00.000Z` }
   );
   const agentCookie = await login("/api/agent-login", agent.email, "history-password", "agent_session");
   let result = await request("/api/pickup-requests?requestType=agentTicket", { headers: { cookie: agentCookie } });
-  assert.deepEqual(result.body.requests.map((item) => item.id), ["today-ticket", "friday-resubmitted-saturday", "week-ticket"]);
+  assert.deepEqual(result.body.requests.map((item) => item.id), ["today-ticket", "resubmitted-ticket", "week-ticket"]);
   assert.deepEqual(result.body.olderRejectedTickets.map((item) => item.id), ["old-rejected"]);
 
   const adminCookie = await login("/api/admin-login", "admin@example.com", "admin-password", "admin_session");
   result = await request(`/api/admin/pickup-requests?reportType=tickets&status=Approved&range=daily&from=${today}&to=${today}&person=${encodeURIComponent(agent.email)}`, { headers: { cookie: adminCookie } });
   assert.deepEqual(result.body.requests.map((item) => item.id), ["today-ticket"]);
 
-  result = await request(`/api/admin/pickup-requests?reportType=tickets&status=Pending%20approval&range=custom&from=2026-09-19&to=2026-09-19&person=${encodeURIComponent(agent.email)}`, { headers: { cookie: adminCookie } });
-  assert.deepEqual(result.body.requests.map((item) => item.id), ["friday-resubmitted-saturday"]);
+  result = await request(`/api/admin/pickup-requests?reportType=tickets&status=Pending%20approval&range=custom&from=${resubmittedDate}&to=${resubmittedDate}&person=${encodeURIComponent(agent.email)}`, { headers: { cookie: adminCookie } });
+  assert.deepEqual(result.body.requests.map((item) => item.id), ["resubmitted-ticket"]);
 });
 
 test("administrators and accountants can delete finalized tickets", async () => {
