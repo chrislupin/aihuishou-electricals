@@ -33,10 +33,10 @@ const scrypt = promisify(crypto.scrypt);
 const sessionSecret = process.env.SESSION_SECRET || (process.env.NODE_ENV === "production" ? "" : crypto.randomBytes(32).toString("hex"));
 const GOODS_PRICES = Object.freeze({
   'LCDs': 800, '512GB 2 ICE': 2400, '512GB 3 ICE': 1900,
-  '256GB 2 ICE': 2400, '256GB 3 ICE': 1900, '128GB 2 ICE': 1700,
+  '256GB 2 ICE': 2400, '256GB 3 ICE': 1700, '128GB 2 ICE': 1700,
   '128GB 3 ICE': 1300, '64GB 2 ICE': 1300, '64GB 3 ICE': 1000,
-  '32GB 2 ICE': 650, '32GB 3 ICE': 550, '16GB': 280, '8GB': 150,
-  '4GB': 70, 'CHINESE HIGH GRADE': 50, 'CHINESE LOW GRADE': 40,
+  '32GB 2 ICE': 650, '32GB 3 ICE': 550, '16GB': 250, '8GB': 130,
+  '4GB': 50, 'CHINESE HIGH GRADE': 50, 'CHINESE LOW GRADE': 40,
   'TABLET': 40, 'BIGSMART': 40, 'IPHONE': 100, 'CPU GOLD': 500,
   'CPU NO GOLD': 35, 'DISPLAY CARDS': 700, 'SOFT BATTERY': 300,
   'HARD BATTERY': 150, 'HARD DISK': 300, 'HARD DISK BOARD': 1000,
