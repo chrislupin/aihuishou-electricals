@@ -334,12 +334,17 @@
         const people = new Map();
         items.forEach((request) => {
           const key = request.agentEmail || `${personName(request)}|${roleLabel(request)}`;
-          const person = people.get(key) || { name: personName(request), role: roleLabel(request), goods: new Map() };
+          const person = people.get(key) || { name: personName(request), role: roleLabel(request), goods: new Map(), ticketCount: 0, totalQuantity: 0, totalAmount: 0 };
+          person.ticketCount += 1;
           (request.goods || []).forEach((good) => {
             const goodName = good.name || 'Unnamed good';
             const subtotal = person.goods.get(goodName) || { quantity: 0, amount: 0 };
-            subtotal.quantity += Number(good.quantity) || 0;
-            subtotal.amount += lineTotal(good);
+            const quantity = Number(good.quantity) || 0;
+            const amount = lineTotal(good);
+            subtotal.quantity += quantity;
+            subtotal.amount += amount;
+            person.totalQuantity += quantity;
+            person.totalAmount += amount;
             person.goods.set(goodName, subtotal);
           });
           people.set(key, person);
@@ -358,7 +363,13 @@
             goodsTotals.set(goodName, aggregate);
           });
         });
-        rows.push(['SUBTOTALS BY EMPLOYEE / AGENT', '', '', '', '', '']);
+        rows.push(['EMPLOYEE / AGENT TOTALS', '', '', '', '', '']);
+        rows.push(['Employee / agent', 'Role', 'Tickets', 'Total quantity', 'Subtotal amount', '']);
+        groupedPeople.forEach((person) => {
+          rows.push([person.name, person.role, person.ticketCount, person.totalQuantity, csvAmount(person.totalAmount), '']);
+        });
+        rows.push([]);
+        rows.push(['GOODS SUBTOTALS BY EMPLOYEE / AGENT', '', '', '', '', '']);
         rows.push(['Employee / agent', 'Role', 'Good', 'Total quantity', 'Total amount', '']);
         groupedPeople.forEach((person) => {
           [...person.goods.entries()].sort(([first], [second]) => first.localeCompare(second)).forEach(([name, subtotal]) => {
