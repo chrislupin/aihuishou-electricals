@@ -53,6 +53,7 @@ const ACCOUNT_GOODS_PRICES = Object.freeze({
     "128GB": 1500,
     "64GB": 800,
     "32GB": 450,
+    "512GB": 1900,
     "16GB": 200,
     "8GB": 100,
     "4GB": 50,
@@ -73,7 +74,16 @@ const ACCOUNT_GOODS_PRICES = Object.freeze({
     "DISPLAY CARDS": 500,
     "HARD DISK": 250,
     "HARD DISK BOARD": 900,
-    "CAMERAS": 8500
+    "CAMERAS": 8500,
+    "ORIGINAL PHONES": 9000,
+    "GREEN BOARD HIGH GRADE": 1300,
+    "RUBBISH HIGH GRADE": 700,
+    "PRINTERS": 1000,
+    "YELLOW MIX": 1000,
+    "CHINESE HIGH GRADE": 50,
+    "CHINESE LOW GRADE": 40,
+    "CPU GOLD": 500,
+    "CPU NO GOLD": 35
   })
 });
 const PRICE_OVERRIDE_AGENT_EMAIL = "lukusaalain483@gmail.com";
