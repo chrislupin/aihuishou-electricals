@@ -47,6 +47,35 @@ const GOODS_PRICES = Object.freeze({
   'YELLOW MIX': 1000
 });
 const GOODS_OPTIONS = new Set([...Object.keys(GOODS_PRICES), 'RAMS']);
+const ACCOUNT_GOODS_PRICES = Object.freeze({
+  "gisorebarrack5@gmail.com": Object.freeze({
+    "256GB": 1700,
+    "128GB": 1500,
+    "64GB": 800,
+    "32GB": 450,
+    "16GB": 200,
+    "8GB": 100,
+    "4GB": 50,
+    "BIGSMART": 40,
+    "IPHONE": 100,
+    "TABLET": 40,
+    "LAPTOP LOW GRADE": 1000,
+    "LAPTOP BOARD": 3500,
+    "COMPUTER GLASS": 400,
+    "COMPUTER 1 ICE": 900,
+    "COMPUTER 2 ICE": 1500,
+    "SOFT BATTERY": 200,
+    "HARD BATTERY": 100,
+    "RUBBISH": 250,
+    "RUBBISH LOW GRADE": 500,
+    "CAR BOARD": 500,
+    "LCD": 500,
+    "DISPLAY CARDS": 500,
+    "HARD DISK": 250,
+    "HARD DISK BOARD": 900,
+    "CAMERAS": 8500
+  })
+});
 const PRICE_OVERRIDE_AGENT_EMAIL = "lukusaalain483@gmail.com";
 const TICKET_SUBMISSION_CUTOFF_EXEMPT_EMAILS = new Set([
   "lukusaalain483@gmail.com",
@@ -54,6 +83,9 @@ const TICKET_SUBMISSION_CUTOFF_EXEMPT_EMAILS = new Set([
 ]);
 function canSetGoodsPrices(agent) {
   return normalizeEmail(agent?.email) === PRICE_OVERRIDE_AGENT_EMAIL;
+}
+function goodsPricesFor(agent) {
+  return ACCOUNT_GOODS_PRICES[normalizeEmail(agent?.email)] || GOODS_PRICES;
 }
 const MAX_PASSWORD_LENGTH = 256;
 const BUSINESS_TIMEZONE = "Africa/Nairobi";
@@ -1241,7 +1273,8 @@ app.get(
           req.agent.fullName,
         phone: req.agent.phone,
         email: req.agent.email,
-        canSetGoodsPrices: canSetGoodsPrices(req.agent)
+        canSetGoodsPrices: canSetGoodsPrices(req.agent),
+        goodsPrices: goodsPricesFor(req.agent)
       }
     });
   }
@@ -2996,7 +3029,7 @@ app.post(
     const cleanedGoods = goods.map((item) => {
       const name = item.name.trim();
       const amount = isAgentPickup || !canSetGoodsPrices(req.agent)
-        ? (isAgentPickup ? 0 : (GOODS_PRICES[name] ?? Number(item.amount)))
+        ? (isAgentPickup ? 0 : (goodsPricesFor(req.agent)[name] ?? Number(item.amount)))
         : Number(item.amount);
       return { name, quantity: Number(item.quantity), amount, totalAmount: isAgentPickup ? 0 : amount * Number(item.quantity) };
     });
@@ -3279,7 +3312,7 @@ app.put(
       const name = item.name.trim();
       const amount = canSetGoodsPrices(req.agent)
         ? Number(item.amount)
-        : (GOODS_PRICES[name] ?? Number(item.amount));
+        : (goodsPricesFor(req.agent)[name] ?? Number(item.amount));
       return { name, quantity: Number(item.quantity), amount, totalAmount: amount * Number(item.quantity) };
     });
     const now = new Date().toISOString();
