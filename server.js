@@ -1751,12 +1751,12 @@ async function createAgentAccessInvite(req, application) {
   const now = new Date();
   const invite = {
     id: crypto.randomUUID(),
-    applicationId: application.id,
     email: application.email,
     tokenHash: crypto.createHash("sha256").update(token).digest("hex"),
     createdAt: now,
     expiresAt: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)
   };
+  if (application.id) invite.applicationId = application.id;
 
   await agentAccessInvitesCollection.deleteMany({ email: application.email });
   await agentAccessInvitesCollection.insertOne(invite);
@@ -1779,6 +1779,26 @@ async function sendApprovedAgentEmail(application, accessUrl) {
       "If you do not see this message in your inbox, please check your spam or junk folder.",
       "",
       "If you did not apply, you can safely ignore this email.",
+      "",
+      "Aihuishou Electricals"
+    ].join("\n")
+  });
+}
+
+async function sendAgentUpgradeEmail(account, accessUrl) {
+  const firstName = String(account.fullName || "there").trim().split(/\s+/)[0] || "there";
+  await transporter.sendMail({
+    from: process.env.SMTP_FROM || process.env.SMTP_USER,
+    to: account.email,
+    subject: "Your Aihuishou account has been upgraded to agent",
+    text: [
+      `Hello ${firstName},`,
+      "",
+      "Your Aihuishou field employee account has been upgraded to an Agent account.",
+      "Use the secure link below within seven days to set your Agent password and access the Agent portal:",
+      accessUrl,
+      "",
+      "Your previous field employee sessions have been signed out.",
       "",
       "Aihuishou Electricals"
     ].join("\n")
@@ -1991,10 +2011,12 @@ app.post("/api/agent-invitation/confirm", authLimiter, async (req, res) => {
     if (!result.matchedCount) return res.status(400).json({ error: "This account is no longer waiting for activation." });
 
     await agentAccessInvitesCollection.deleteMany({ email });
-    await agentApplicationsCollection.updateOne(
-      { id: invite.applicationId },
-      { $set: { accessActivatedAt: new Date().toISOString() } }
-    );
+    if (invite.applicationId) {
+      await agentApplicationsCollection.updateOne(
+        { id: invite.applicationId },
+        { $set: { accessActivatedAt: new Date().toISOString() } }
+      );
+    }
     const account = await getAccountByEmail(email);
     createSession(res, account);
     return res.json({
@@ -2758,8 +2780,101 @@ app.post("/api/admin/accounts/:email/enable", requireAdmin, async (req, res) => 
   }
 });
 
-app.delete("/api/admin/accounts/:email", requireAdmin, (req, res) => {
-  return res.status(405).json({ error: "Accounts are retained for auditability. Disable the account instead." });
+app.post("/api/admin/accounts/:email/upgrade-to-agent", requireAdmin, async (req, res) => {
+  try {
+    const email = normalizeEmail(req.params.email);
+    if (!email) return res.status(400).json({ error: "A valid account email is required." });
+
+    const account = await getAccountByEmail(email);
+    if (!account || account.role !== "fieldEmployee") {
+      return res.status(409).json({ error: "Only field employee accounts can be upgraded to agents." });
+    }
+
+    const now = new Date().toISOString();
+    const result = await accountsCollection.updateOne(
+      { email: account.email, role: "fieldEmployee" },
+      {
+        $set: {
+          role: "agent",
+          accessStatus: "invited",
+          upgradedAt: now,
+          upgradedBy: req.admin.email
+        },
+        $unset: {
+          salt: "",
+          passwordHash: "",
+          activatedAt: "",
+          disabledAt: "",
+          disabledBy: ""
+        },
+        $inc: { sessionVersion: 1 }
+      }
+    );
+    if (!result.matchedCount) return res.status(409).json({ error: "This account changed before it could be upgraded. Refresh and try again." });
+
+    await passwordResetCollection.deleteMany({ email: account.email });
+    const accessUrl = await createAgentAccessInvite(req, account);
+    let emailSent = true;
+    try {
+      await sendAgentUpgradeEmail(account, accessUrl);
+    } catch (error) {
+      emailSent = false;
+      console.error("Agent upgrade access email failed:", error.message);
+    }
+    await recordSecurityEvent(req, "account.upgraded_to_agent", { email: account.email }, { emailSent });
+
+    return res.json({
+      message: emailSent
+        ? "Account upgraded to agent and an account-access email was sent."
+        : "Account upgraded to agent, but the account-access email could not be sent. Check SMTP settings before retrying.",
+      emailSent
+    });
+  } catch (error) {
+    console.error("Account upgrade failed:", error.message);
+    return res.status(500).json({ error: "Unable to upgrade this account to an agent." });
+  }
+});
+
+app.post("/api/admin/accounts/:email/resend-agent-access", requireAdmin, async (req, res) => {
+  try {
+    const email = normalizeEmail(req.params.email);
+    if (!email) return res.status(400).json({ error: "A valid account email is required." });
+    const account = await getAccountByEmail(email);
+    if (!account || account.role !== "agent" || account.accessStatus !== "invited" || !account.upgradedAt) {
+      return res.status(409).json({ error: "This account is not waiting for access after an upgrade." });
+    }
+
+    const accessUrl = await createAgentAccessInvite(req, account);
+    await sendAgentUpgradeEmail(account, accessUrl);
+    await recordSecurityEvent(req, "account.upgrade_access_resent", { email: account.email });
+    return res.json({ message: "A new Agent account-access link has been emailed." });
+  } catch (error) {
+    console.error("Agent upgrade access email resend failed:", error.message);
+    return res.status(502).json({ error: "The account-access email could not be sent. Check SMTP settings and try again." });
+  }
+});
+
+app.delete("/api/admin/accounts/:email", requireAdmin, async (req, res) => {
+  try {
+    const email = normalizeEmail(req.params.email);
+    if (!email) return res.status(400).json({ error: "A valid account email is required." });
+
+    // Operational records retain the account email as their historical link.
+    // Only the credentials record is removed, so deleting an account neither
+    // removes nor changes submitted tickets, pickups, or their audit history.
+    const result = await accountsCollection.deleteOne({ email });
+    if (!result.deletedCount) return res.status(404).json({ error: "Account not found." });
+
+    await Promise.all([
+      passwordResetCollection.deleteMany({ email }),
+      agentAccessInvitesCollection.deleteMany({ email })
+    ]);
+    await recordSecurityEvent(req, "account.deleted", { email });
+    return res.json({ message: "Account deleted. Historical operational data has been retained and this email can register again." });
+  } catch (error) {
+    console.error("Account deletion failed:", error.message);
+    return res.status(500).json({ error: "Unable to delete account." });
+  }
 });
 
 app.post(

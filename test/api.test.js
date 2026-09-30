@@ -494,3 +494,66 @@ test("administrators and accountants can delete finalized tickets", async () => 
   assert.equal(result.response.status, 200);
   assert.ok(result.body.events.some((event) => event.id === audit.id));
 });
+
+test("an administrator can upgrade a field employee to an agent", async () => {
+  const adminCookie = signedSessionCookie("admin_session", { admin: true, sessionVersion: 0 });
+  const email = "promoted-field@example.com";
+  const fieldEmployee = passwordAccount(email, "field-password", {
+    role: "fieldEmployee",
+    fullName: "Promoted Field Employee",
+    phone: "0700000000",
+    company: "",
+    location: "",
+    sessionVersion: 2
+  });
+  collection("agent_accounts").records.push(fieldEmployee);
+  collection("password_resets").records.push({ email, tokenHash: "reset", expiresAt: new Date(Date.now() + 60_000) });
+  const fieldCookie = signedSessionCookie("field_employee_session", { email, role: "fieldEmployee", sessionVersion: 2 });
+
+  let result = await request(`/api/admin/accounts/${encodeURIComponent(email)}/upgrade-to-agent`, { method: "POST", headers: { cookie: adminCookie } });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.emailSent, true);
+  const upgraded = await collection("agent_accounts").findOne({ email });
+  assert.equal(upgraded.role, "agent");
+  assert.equal(upgraded.accessStatus, "invited");
+  assert.equal(upgraded.passwordHash, undefined);
+  assert.equal(upgraded.sessionVersion, 3);
+  assert.equal(await collection("password_resets").findOne({ email }), null);
+  assert.ok(await collection("agent_access_invites").findOne({ email }));
+
+  result = await request("/api/field-employee-session", { headers: { cookie: fieldCookie } });
+  assert.equal(result.response.status, 401);
+
+  const upgradeEmail = sentEmails.findLast((message) => message.to === email && message.subject === "Your Aihuishou account has been upgraded to agent");
+  assert.ok(upgradeEmail);
+  assert.match(upgradeEmail.text, /agent-login\.html\?invite=/);
+  result = await request(`/api/admin/accounts/${encodeURIComponent(email)}/resend-agent-access`, { method: "POST", headers: { cookie: adminCookie } });
+  assert.equal(result.response.status, 200);
+  assert.ok(collection("security_audit_log").records.some((event) => event.action === "account.upgraded_to_agent" && event.target.email === email));
+  assert.ok(collection("security_audit_log").records.some((event) => event.action === "account.upgrade_access_resent" && event.target.email === email));
+});
+
+test("deleting an account preserves operational records and permits a new registration", async () => {
+  const adminCookie = signedSessionCookie("admin_session", { admin: true, sessionVersion: 0 });
+  const email = "rejoin@example.com";
+  collection("agent_accounts").records.push(passwordAccount(email, "rejoin-password"));
+  collection("pickup_requests").records.push({ id: "rejoin-ticket", agentEmail: email, requestType: "agentTicket", status: "Approved", goods: [{ name: "LCDs", quantity: 1, amount: 800 }], createdAt: new Date().toISOString() });
+  collection("password_resets").records.push({ email, tokenHash: "reset", expiresAt: new Date(Date.now() + 60_000) });
+  collection("agent_access_invites").records.push({ email, tokenHash: "invite", expiresAt: new Date(Date.now() + 60_000) });
+
+  let result = await request(`/api/admin/accounts/${encodeURIComponent(email)}`, { method: "DELETE", headers: { cookie: adminCookie } });
+  assert.equal(result.response.status, 200);
+  assert.equal(await collection("agent_accounts").findOne({ email }), null);
+  assert.ok(await collection("pickup_requests").findOne({ id: "rejoin-ticket" }));
+  assert.equal(await collection("password_resets").findOne({ email }), null);
+  assert.equal(await collection("agent_access_invites").findOne({ email }), null);
+
+  result = await request("/api/agent-applications", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ firstName: "Rejoin", lastName: "Agent", email, phone: "0700000000", businessName: "Rejoin Traders", location: "Nairobi" })
+  });
+  assert.equal(result.response.status, 201);
+  assert.ok(await collection("agent_applications").findOne({ email, status: "Pending" }));
+  assert.ok(collection("security_audit_log").records.some((event) => event.action === "account.deleted" && event.target.email === email));
+});

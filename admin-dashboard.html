@@ -519,7 +519,61 @@
             }
             load();
           });
+          const upgrade = account.role === 'fieldEmployee' ? document.createElement('button') : null;
+          if (upgrade) {
+            upgrade.className = 'btn';
+            upgrade.type = 'button';
+            upgrade.textContent = 'Upgrade to agent';
+            upgrade.addEventListener('click', async () => {
+              if (!confirm(`Upgrade ${account.fullName} to an Agent? Their field employee sessions will be revoked and they will receive an email to set an Agent password.`)) return;
+              upgrade.disabled = true;
+              const response = await fetch(`/api/admin/accounts/${encodeURIComponent(account.email)}/upgrade-to-agent`, { method: 'POST' });
+              const result = await response.json().catch(() => ({}));
+              if (!response.ok) {
+                alert(result.error || 'Unable to upgrade this account.');
+                upgrade.disabled = false;
+                return;
+              }
+              alert(result.message || 'Account upgraded to agent.');
+              load();
+            });
+          }
+          const resendAgentAccess = account.role === 'agent' && account.accessStatus === 'invited' && account.upgradedAt ? document.createElement('button') : null;
+          if (resendAgentAccess) {
+            resendAgentAccess.className = 'btn btn-ghost';
+            resendAgentAccess.type = 'button';
+            resendAgentAccess.textContent = 'Resend agent access';
+            resendAgentAccess.addEventListener('click', async () => {
+              resendAgentAccess.disabled = true;
+              const response = await fetch(`/api/admin/accounts/${encodeURIComponent(account.email)}/resend-agent-access`, { method: 'POST' });
+              const result = await response.json().catch(() => ({}));
+              if (!response.ok) {
+                alert(result.error || 'Unable to resend Agent access.');
+                resendAgentAccess.disabled = false;
+                return;
+              }
+              alert(result.message || 'A new Agent account-access link has been emailed.');
+            });
+          }
+          const remove = document.createElement('button');
+          remove.className = 'btn danger';
+          remove.type = 'button';
+          remove.textContent = 'Delete account';
+          remove.addEventListener('click', async () => {
+            if (!confirm(`Delete ${account.fullName}'s login account? Their tickets, pickup records and audit history will be kept. They can register again with this email.`)) return;
+            const response = await fetch(`/api/admin/accounts/${encodeURIComponent(account.email)}`, { method: 'DELETE' });
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok) {
+              alert(result.error || 'Unable to delete this account.');
+              return;
+            }
+            if (result.message) alert(result.message);
+            load();
+          });
           card.append(details, access);
+          if (upgrade) card.append(upgrade);
+          if (resendAgentAccess) card.append(resendAgentAccess);
+          card.append(remove);
           target.append(card);
         });
       }
