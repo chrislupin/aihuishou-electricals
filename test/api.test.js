@@ -542,6 +542,14 @@ test("deleting an account preserves operational records and permits a new regist
   collection("agent_access_invites").records.push({ email, tokenHash: "invite", expiresAt: new Date(Date.now() + 60_000) });
 
   let result = await request(`/api/admin/accounts/${encodeURIComponent(email)}`, { method: "DELETE", headers: { cookie: adminCookie } });
+  assert.equal(result.response.status, 400);
+  assert.ok(await collection("agent_accounts").findOne({ email }));
+
+  result = await request(`/api/admin/accounts/${encodeURIComponent(email)}`, {
+    method: "DELETE",
+    headers: { cookie: adminCookie, "content-type": "application/json" },
+    body: JSON.stringify({ reason: "Duplicate account" })
+  });
   assert.equal(result.response.status, 200);
   assert.equal(await collection("agent_accounts").findOne({ email }), null);
   assert.ok(await collection("pickup_requests").findOne({ id: "rejoin-ticket" }));
@@ -555,5 +563,5 @@ test("deleting an account preserves operational records and permits a new regist
   });
   assert.equal(result.response.status, 201);
   assert.ok(await collection("agent_applications").findOne({ email, status: "Pending" }));
-  assert.ok(collection("security_audit_log").records.some((event) => event.action === "account.deleted" && event.target.email === email));
+  assert.ok(collection("security_audit_log").records.some((event) => event.action === "account.deleted" && event.target.email === email && event.metadata.reason === "Duplicate account"));
 });

@@ -2898,6 +2898,8 @@ app.post("/api/admin/accounts/:email/resend-agent-access", requireAdmin, async (
 });
 
 app.delete("/api/admin/accounts/:email", requireAdmin, async (req, res) => {
+  const deletionReason = applicationField(req.body?.reason, 500);
+  if (!deletionReason) return res.status(400).json({ error: "A deletion reason is required." });
   try {
     const email = normalizeEmail(req.params.email);
     if (!email) return res.status(400).json({ error: "A valid account email is required." });
@@ -2912,7 +2914,7 @@ app.delete("/api/admin/accounts/:email", requireAdmin, async (req, res) => {
       passwordResetCollection.deleteMany({ email }),
       agentAccessInvitesCollection.deleteMany({ email })
     ]);
-    await recordSecurityEvent(req, "account.deleted", { email });
+    await recordSecurityEvent(req, "account.deleted", { email }, { reason: deletionReason });
     return res.json({ message: "Account deleted. Historical operational data has been retained and this email can register again." });
   } catch (error) {
     console.error("Account deletion failed:", error.message);

@@ -15,7 +15,7 @@
       .nav a { padding: 12px; border-radius: 8px; color: #dcecff; text-decoration: none; font-size: 14px; font-weight: 700; }
       .nav a.active, .nav a:hover { background: #ffffff24; color: #fff; }
       .page { width: min(1020px, calc(100% - 40px)); margin: 0 auto; padding: 28px 0 60px; }
-      .header, .filters, .account { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+      .header, .filters { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
       .btn { padding: 10px 14px; border: 1px solid transparent; border-radius: 8px; background: var(--orange); color: #fff; font: 700 14px inherit; cursor: pointer; }
       .btn:disabled { cursor: default; opacity: .7; }
       .ghost { border-color: var(--line); background: #fff; color: var(--blue-deep); }
@@ -26,6 +26,11 @@
       .filters select, .filters input { padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: #f8fcff; color: var(--ink); font: inherit; }
       .filters label { color: var(--blue-deep); font-size: 13px; font-weight: 700; }
       .card, .empty { margin: 12px 0; padding: 18px; border: 1px solid var(--line); border-radius: 14px; background: #fff; box-shadow: 0 10px 24px #14538812; }
+      .account { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 18px; }
+      .account > div:first-child { min-width: 0; overflow-wrap: anywhere; }
+      .account-actions { display: grid; grid-template-columns: repeat(3, 156px); gap: 12px; align-items: center; }
+      .account-actions .btn { width: 100%; white-space: nowrap; }
+      .account-actions .account-delete { grid-column: 3; }
       .summary { width: 100%; margin: 12px 0 28px; border: 1px solid var(--line); border-collapse: collapse; background: #fff; }
       .summary th, .summary td { padding: 11px; border-bottom: 1px solid var(--line); text-align: left; }
       .summary th { color: var(--muted); font-size: 11px; text-transform: uppercase; }
@@ -51,8 +56,8 @@
       .approval-actions .btn { white-space: nowrap; }
       .badge.approved { background: #ddf7e7; color: #126337; }
       .badge.rejected { background: #ffe3e3; color: #8d2020; }
-      @media (max-width: 900px) { .details { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-      @media (max-width: 760px) { .app { grid-template-columns: 1fr; } .side { padding: 14px; } .nav { grid-template-columns: repeat(2, 1fr); margin-top: 8px; } .page { width: min(100% - 28px, 1020px); } .details { grid-template-columns: 1fr; } }
+      @media (max-width: 900px) { .details { grid-template-columns: repeat(2, minmax(0, 1fr)); } .account { grid-template-columns: 1fr; } .account-actions { justify-self: stretch; } }
+      @media (max-width: 760px) { .app { grid-template-columns: 1fr; } .side { padding: 14px; } .nav { grid-template-columns: repeat(2, 1fr); margin-top: 8px; } .page { width: min(100% - 28px, 1020px); } .details { grid-template-columns: 1fr; } .account-actions { grid-template-columns: 1fr; } .account-actions .account-delete { grid-column: auto; } }
     </style>
   </head>
   <body>
@@ -496,6 +501,8 @@
           const card = document.createElement('article');
           card.className = 'card account';
           const details = document.createElement('div');
+          const actions = document.createElement('div');
+          actions.className = 'account-actions';
           const name = document.createElement('strong');
           const meta = document.createElement('div');
           name.textContent = account.fullName;
@@ -506,6 +513,7 @@
           const access = document.createElement('button');
           const disabled = account.accessStatus === 'disabled';
           access.className = `btn${disabled ? '' : ' danger'}`;
+          access.classList.add('account-access');
           access.type = 'button';
           access.textContent = disabled ? 'Enable account' : 'Disable account';
           access.addEventListener('click', async () => {
@@ -522,6 +530,7 @@
           const upgrade = account.role === 'fieldEmployee' ? document.createElement('button') : null;
           if (upgrade) {
             upgrade.className = 'btn';
+            upgrade.classList.add('account-upgrade');
             upgrade.type = 'button';
             upgrade.textContent = 'Upgrade to agent';
             upgrade.addEventListener('click', async () => {
@@ -541,6 +550,7 @@
           const resendAgentAccess = account.role === 'agent' && account.accessStatus === 'invited' && account.upgradedAt ? document.createElement('button') : null;
           if (resendAgentAccess) {
             resendAgentAccess.className = 'btn btn-ghost';
+            resendAgentAccess.classList.add('account-upgrade');
             resendAgentAccess.type = 'button';
             resendAgentAccess.textContent = 'Resend agent access';
             resendAgentAccess.addEventListener('click', async () => {
@@ -557,11 +567,18 @@
           }
           const remove = document.createElement('button');
           remove.className = 'btn danger';
+          remove.classList.add('account-delete');
           remove.type = 'button';
           remove.textContent = 'Delete account';
           remove.addEventListener('click', async () => {
+            const reason = prompt(`Why are you deleting ${account.fullName}'s account?`);
+            if (reason === null) return;
+            if (!reason.trim()) {
+              alert('A deletion reason is required.');
+              return;
+            }
             if (!confirm(`Delete ${account.fullName}'s login account? Their tickets, pickup records and audit history will be kept. They can register again with this email.`)) return;
-            const response = await fetch(`/api/admin/accounts/${encodeURIComponent(account.email)}`, { method: 'DELETE' });
+            const response = await fetch(`/api/admin/accounts/${encodeURIComponent(account.email)}`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason: reason.trim() }) });
             const result = await response.json().catch(() => ({}));
             if (!response.ok) {
               alert(result.error || 'Unable to delete this account.');
@@ -570,10 +587,11 @@
             if (result.message) alert(result.message);
             load();
           });
-          card.append(details, access);
-          if (upgrade) card.append(upgrade);
-          if (resendAgentAccess) card.append(resendAgentAccess);
-          card.append(remove);
+          actions.append(access);
+          if (upgrade) actions.append(upgrade);
+          if (resendAgentAccess) actions.append(resendAgentAccess);
+          actions.append(remove);
+          card.append(details, actions);
           target.append(card);
         });
       }
