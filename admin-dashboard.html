@@ -43,9 +43,16 @@
       .account-actions { display: grid; grid-template-columns: repeat(3, 156px); gap: 12px; align-items: center; }
       .account-actions .btn { width: 100%; white-space: nowrap; }
       .account-actions .account-delete { grid-column: 3; }
-      .summary { width: 100%; margin: 12px 0 28px; border: 1px solid var(--line); border-collapse: collapse; background: #fff; }
-      .summary th, .summary td { padding: 11px; border-bottom: 1px solid var(--line); text-align: left; }
-      .summary th { color: var(--muted); font-size: 11px; text-transform: uppercase; }
+      .summary-wrap { margin: 12px 0 28px; overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; background: #fff; box-shadow: 0 10px 24px #14538812; }
+      .summary { width: 100%; min-width: 900px; border-collapse: collapse; background: #fff; }
+      .summary th, .summary td { padding: 14px; border-bottom: 1px solid var(--line); vertical-align: top; text-align: left; }
+      .summary th { background: #f4faff; color: var(--muted); font-size: 11px; letter-spacing: .05em; text-transform: uppercase; }
+      .summary td { color: var(--ink); font-size: 13px; }
+      .summary tbody tr:last-child td { border-bottom: 0; }
+      .summary tbody tr:hover { background: #f8fcff; }
+      .summary .summary-person { color: var(--blue-deep); font-weight: 800; }
+      .summary .summary-count { font-weight: 800; text-align: center; }
+      .summary .summary-total { color: var(--blue-deep); font-weight: 800; white-space: nowrap; }
       .request-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
       .request-top h3 { margin: 0; }
       .request-top p { margin: 5px 0 0; }
@@ -353,15 +360,21 @@
         const body = document.createElement('tbody');
         people.forEach((person) => {
           const row = document.createElement('tr');
-          [person.name, person.role, person.ticketCount, [...person.goods].map(([name, quantity]) => `${name}: ${quantity}`).join(', '), formatAmount(person.total)].forEach((value) => {
+          [person.name, person.role, person.ticketCount, [...person.goods].map(([name, quantity]) => `${name}: ${quantity}`).join(', '), formatAmount(person.total)].forEach((value, index) => {
             const cell = document.createElement('td');
+            if (index === 0) cell.className = 'summary-person';
+            if (index === 2) cell.className = 'summary-count';
+            if (index === 4) cell.className = 'summary-total';
             cell.textContent = value;
             row.append(cell);
           });
           body.append(row);
         });
         table.append(body);
-        target.replaceChildren(table);
+        const wrap = document.createElement('div');
+        wrap.className = 'summary-wrap';
+        wrap.append(table);
+        target.replaceChildren(wrap);
       }
 
       function renderDateApprovals() {
