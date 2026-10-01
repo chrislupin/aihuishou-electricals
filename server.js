@@ -436,11 +436,26 @@ function isWithinLastBusinessDays(value, days) {
   return daysAgo >= 0 && daysAgo < days;
 }
 
-// A resubmission starts a new review cycle.  Use that cycle's timestamp when
-// deciding which business day a ticket belongs to, while keeping createdAt as
-// the immutable record of its original submission.
+// A resubmission starts a new review cycle. Use that cycle's timestamp for
+// tickets that have not yet been approved, while keeping createdAt as the
+// immutable record of the original submission.
 function ticketActivityAt(request) {
   return request?.resubmittedAt || request?.createdAt;
+}
+
+function isOperationalTicket(request) {
+  return request?.requestType === "fieldEmployee" || request?.requestType === "agentTicket";
+}
+
+// An approved operational ticket belongs to the Nairobi business day on which
+// it was approved, not the day it was submitted. The fallback preserves the
+// best available date for legacy records whose approval timestamp predates the
+// approval audit trail.
+function ticketReportAt(request) {
+  if (isOperationalTicket(request) && request?.status === "Approved") {
+    return request.approvedAt || request.updatedAt || ticketActivityAt(request);
+  }
+  return ticketActivityAt(request);
 }
 
 function businessWeekStartKey(value = new Date()) {
@@ -751,6 +766,34 @@ async function migrateTicketRevisions() {
   await database.collection("migrations").insertOne({ name: "ticket-revisions-v1", migratedAt: new Date() });
 }
 
+// Early approved tickets may predate the approvedAt field. Recover the actual
+// decision time from the immutable audit log so existing reports are grouped
+// by approval day too. Records without a matching audit event are left intact;
+// ticketReportAt then uses their best available legacy timestamp.
+async function backfillTicketApprovalDates() {
+  if (!database || await database.collection("migrations").findOne({ name: "ticket-approved-at-v1" })) {
+    return;
+  }
+
+  const [tickets, approvals] = await Promise.all([
+    pickupRequestsCollection.find({ status: "Approved" }).toArray(),
+    securityAuditLogCollection.find({ action: "pickup_request.approved" }).toArray()
+  ]);
+  const approvedAtByTicketId = new Map(
+    approvals
+      .filter((event) => event?.target?.id && !Number.isNaN(new Date(event.createdAt).getTime()))
+      .map((event) => [event.target.id, event.createdAt])
+  );
+
+  for (const ticket of tickets) {
+    if (!isOperationalTicket(ticket) || ticket.approvedAt) continue;
+    const approvedAt = approvedAtByTicketId.get(ticket.id);
+    if (approvedAt) await pickupRequestsCollection.updateOne({ _id: ticket._id }, { $set: { approvedAt } });
+  }
+
+  await database.collection("migrations").insertOne({ name: "ticket-approved-at-v1", migratedAt: new Date() });
+}
+
 async function removeDuplicateAccounts() {
   const duplicateGroups = await accountsCollection.aggregate([
     { $match: { email: { $type: "string" } } },
@@ -819,6 +862,7 @@ async function ensureDatabase() {
 
       await migrateJsonData();
       await migrateTicketRevisions();
+      await backfillTicketApprovalDates();
       await removeDuplicateAccounts();
       await reconcileDuplicatePendingApplications(agentApplicationsCollection, "agent");
       await reconcileDuplicatePendingApplications(accountantApplicationsCollection, "accountant");
@@ -2403,7 +2447,7 @@ app.get(
         if (role === "agent" && request.requestType === "fieldEmployee") return false;
         if (role === "fieldEmployee" && request.requestType !== "fieldEmployee") return false;
         if (person && normalizeEmail(request.agentEmail) !== person) return false;
-        return matchesAdminReportDate(ticketActivityAt(request), range, from, to);
+        return matchesAdminReportDate(ticketReportAt(request), range, from, to);
       });
 
       return res.json({

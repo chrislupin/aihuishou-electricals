@@ -7,14 +7,20 @@
     <link rel="stylesheet" href="styles.css" />
     <style>
       * { box-sizing: border-box; }
-      body { margin: 0; font-family: system-ui, sans-serif; }
-      .app { display: grid; grid-template-columns: 255px 1fr; min-height: 100vh; }
-      .side { padding: 25px 18px; background: var(--blue-deep); }
-      .side img { width: 150px; height: 58px; object-fit: contain; }
-      .nav { display: grid; gap: 8px; margin-top: 28px; }
-      .nav a { padding: 12px; border-radius: 8px; color: #dcecff; text-decoration: none; font-size: 14px; font-weight: 700; }
-      .nav a.active, .nav a:hover { background: #ffffff24; color: #fff; }
-      .page { width: min(1240px, calc(100% - 40px)); margin: 0 auto; padding: 28px 0 60px; }
+      body { margin: 0; min-width: 320px; background: #f4f7fb; color: var(--ink); font-family: system-ui, sans-serif; line-height: 1.45; }
+      .app { display: grid; grid-template-columns: 276px minmax(0, 1fr); min-height: 100vh; }
+      .side { position: sticky; top: 0; display: flex; flex-direction: column; height: 100vh; padding: 28px 18px; overflow-y: auto; background: radial-gradient(circle at 12% 8%, #2878b8 0, transparent 31%), linear-gradient(160deg, #082f57 0%, var(--blue-deep) 62%, #071f3b 100%); box-shadow: 12px 0 32px #08264718; }
+      .brand { display: block; width: fit-content; padding: 8px 10px; border: 1px solid #ffffff1f; border-radius: 12px; background: #ffffff0b; }
+      .side img { display: block; width: 150px; height: 48px; object-fit: contain; object-position: left center; }
+      .nav-label { margin: 31px 10px 9px; color: #a9cce8; font-size: 10px; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
+      .nav { display: grid; gap: 6px; }
+      .nav a { display: flex; align-items: center; min-height: 44px; padding: 11px 13px 11px 17px; border: 1px solid transparent; border-radius: 10px; color: #dcecff; text-decoration: none; font-size: 14px; font-weight: 700; transition: background .16s ease, border-color .16s ease, transform .16s ease; }
+      .nav a::before { width: 5px; height: 5px; margin-right: 10px; border-radius: 50%; background: #8dc7ef; content: ''; opacity: .72; }
+      .nav a.active { border-color: #ffffff25; background: linear-gradient(90deg, #ffffff2c, #ffffff13); color: #fff; box-shadow: 0 8px 18px #031b351c; }
+      .nav a.active::before { background: var(--orange); box-shadow: 0 0 0 4px #ff9b4926; opacity: 1; }
+      .nav a:hover { border-color: #ffffff20; background: #ffffff14; color: #fff; transform: translateX(2px); }
+      .nav a:focus-visible, .btn:focus-visible, input:focus-visible { outline: 3px solid #f7ad67; outline-offset: 3px; }
+      .page { width: min(1240px, calc(100% - 64px)); margin: 0 auto; padding: 42px 0 72px; }
       .header, .toolbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; flex-wrap: wrap; }
       .eyebrow { margin: 0 0 6px; color: var(--orange); font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
       h1 { margin: 0; color: var(--blue-deep); font-size: clamp(32px, 5vw, 46px); letter-spacing: -1.8px; }
@@ -22,10 +28,10 @@
       .toolbar { align-items: end; margin: 26px 0 14px; }
       .filter { display: grid; gap: 6px; min-width: min(100%, 370px); }
       .filter label { color: var(--blue-deep); font-size: 12px; font-weight: 800; }
-      input, .btn { min-height: 40px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; font: inherit; }
+      input, .btn { min-height: 42px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 9px; font: inherit; }
       input { background: #f8fcff; color: var(--ink); }
       .btn { background: #fff; color: var(--blue-deep); cursor: pointer; font-weight: 700; }
-      .btn:hover { border-color: var(--orange); }
+      .btn:hover { border-color: var(--orange); box-shadow: 0 7px 15px #14538814; transform: translateY(-1px); }
       .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; background: #fff; box-shadow: 0 10px 24px #14538812; }
       table { width: 100%; min-width: 950px; border-collapse: collapse; }
       th, td { padding: 14px; border-bottom: 1px solid var(--line); vertical-align: top; text-align: left; }
@@ -35,14 +41,16 @@
       .detail { display: grid; gap: 4px; min-width: 220px; }
       .detail b { color: var(--blue-deep); }
       .empty { padding: 22px; border: 1px dashed var(--line); border-radius: 12px; color: var(--muted); text-align: center; }
-      @media (max-width: 760px) { .app { grid-template-columns: 1fr; } .side { padding: 14px; } .nav { grid-template-columns: repeat(2, 1fr); margin-top: 8px; } .page { width: min(100% - 28px, 1240px); } }
+      @media (max-width: 900px) { .app { grid-template-columns: 224px minmax(0, 1fr); } .page { width: min(100% - 42px, 1240px); } }
+      @media (max-width: 760px) { .app { display: block; } .side { position: static; display: block; height: auto; padding: 12px 14px 13px; overflow: hidden; } .brand { padding: 2px 7px; border: 0; background: transparent; } .side img { width: 132px; height: 38px; } .nav-label { display: none; } .nav { display: flex; gap: 8px; margin: 10px -14px -13px; padding: 10px 14px 13px; overflow-x: auto; scrollbar-width: none; border-top: 1px solid #ffffff19; } .nav::-webkit-scrollbar { display: none; } .nav a { flex: 0 0 auto; min-height: 40px; padding: 9px 12px; font-size: 13px; white-space: nowrap; } .nav a::before { width: 4px; height: 4px; margin-right: 7px; } .nav a:hover { transform: none; } .page { width: min(100% - 28px, 1240px); padding: 28px 0 52px; } }
     </style>
   </head>
   <body>
     <main class="app">
       <aside class="side">
-        <a href="admin-dashboard.html"><img src="images/company-logo.png" alt="Aihuishou Electricals" /></a>
-        <nav class="nav">
+        <a class="brand" href="admin-dashboard.html"><img src="images/company-logo.png" alt="Aihuishou Electricals" /></a>
+        <p class="nav-label">Operations workspace</p>
+        <nav class="nav" aria-label="Operations navigation">
           <a href="admin-dashboard.html">Overview &amp; unapproved</a>
           <a href="admin-dashboard.html?view=applications">Agent applications</a>
           <a href="admin-dashboard.html?view=pickup-dates">Pickup dates approval</a>

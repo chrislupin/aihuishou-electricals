@@ -442,17 +442,18 @@ test("ticket history keeps older rejected tickets actionable and report filters 
   collection("pickup_requests").records.push(
     { id: "old-rejected", agentEmail: agent.email, requestType: "agentTicket", status: "Rejected", goods: [{ name: "LCDs", quantity: 1, amount: 1 }], createdAt: "2020-01-01T10:00:00.000Z" },
     { id: "resubmitted-ticket", agentEmail: agent.email, requestType: "agentTicket", status: "Pending approval", goods: [{ name: "LCDs", quantity: 1, amount: 1 }], createdAt: `${businessDateDaysAgo(3)}T10:00:00.000Z`, resubmittedAt: `${resubmittedDate}T10:00:00.000Z` },
-    { id: "week-ticket", agentEmail: agent.email, requestType: "agentTicket", status: "Approved", goods: [{ name: "LCDs", quantity: 1, amount: 1 }], createdAt: `${businessDateDaysAgo(4)}T10:00:00.000Z` },
-    { id: "today-ticket", agentEmail: agent.email, requestType: "agentTicket", status: "Approved", goods: [{ name: "LCDs", quantity: 1, amount: 1 }], createdAt: `${today}T12:00:00.000Z` }
+    { id: "week-ticket", agentEmail: agent.email, requestType: "agentTicket", status: "Approved", goods: [{ name: "LCDs", quantity: 1, amount: 1 }], createdAt: `${businessDateDaysAgo(4)}T10:00:00.000Z`, approvedAt: `${businessDateDaysAgo(4)}T13:00:00.000Z` },
+    { id: "approved-today", agentEmail: agent.email, requestType: "agentTicket", status: "Approved", goods: [{ name: "LCDs", quantity: 1, amount: 1 }], createdAt: `${businessDateDaysAgo(1)}T12:00:00.000Z`, approvedAt: `${today}T12:00:00.000Z` },
+    { id: "created-today", agentEmail: agent.email, requestType: "agentTicket", status: "Approved", goods: [{ name: "LCDs", quantity: 1, amount: 1 }], createdAt: `${today}T12:00:00.000Z`, approvedAt: `${businessDateDaysAgo(1)}T12:00:00.000Z` }
   );
   const agentCookie = await login("/api/agent-login", agent.email, "history-password", "agent_session");
   let result = await request("/api/pickup-requests?requestType=agentTicket", { headers: { cookie: agentCookie } });
-  assert.deepEqual(result.body.requests.map((item) => item.id), ["today-ticket", "resubmitted-ticket", "week-ticket"]);
+  assert.deepEqual(result.body.requests.map((item) => item.id), ["created-today", "approved-today", "resubmitted-ticket", "week-ticket"]);
   assert.deepEqual(result.body.olderRejectedTickets.map((item) => item.id), ["old-rejected"]);
 
   const adminCookie = await login("/api/admin-login", "admin@example.com", "admin-password", "admin_session");
   result = await request(`/api/admin/pickup-requests?reportType=tickets&status=Approved&range=daily&from=${today}&to=${today}&person=${encodeURIComponent(agent.email)}`, { headers: { cookie: adminCookie } });
-  assert.deepEqual(result.body.requests.map((item) => item.id), ["today-ticket"]);
+  assert.deepEqual(result.body.requests.map((item) => item.id), ["approved-today"]);
 
   result = await request(`/api/admin/pickup-requests?reportType=tickets&status=Pending%20approval&range=custom&from=${resubmittedDate}&to=${resubmittedDate}&person=${encodeURIComponent(agent.email)}`, { headers: { cookie: adminCookie } });
   assert.deepEqual(result.body.requests.map((item) => item.id), ["resubmitted-ticket"]);

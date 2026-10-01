@@ -7,21 +7,27 @@
     <link rel="stylesheet" href="styles.css" />
     <style>
       * { box-sizing: border-box; }
-      body { margin: 0; font-family: system-ui, sans-serif; }
-      .app { display: grid; grid-template-columns: 255px 1fr; min-height: 100vh; }
-      .side { padding: 25px 18px; background: var(--blue-deep); }
-      .side img { width: 150px; height: 58px; object-fit: contain; }
-      .nav { display: grid; gap: 8px; margin-top: 28px; }
-      .nav a { padding: 12px; border-radius: 8px; color: #dcecff; text-decoration: none; font-size: 14px; font-weight: 700; }
-      .nav a.active, .nav a:hover { background: #ffffff24; color: #fff; }
-      .page { width: min(1240px, calc(100% - 40px)); margin: 0 auto; padding: 28px 0 60px; }
+      body { margin: 0; min-width: 320px; background: #f4f7fb; color: var(--ink); font-family: system-ui, sans-serif; line-height: 1.45; }
+      .app { display: grid; grid-template-columns: 276px minmax(0, 1fr); min-height: 100vh; }
+      .side { position: sticky; top: 0; display: flex; flex-direction: column; height: 100vh; padding: 28px 18px; overflow-y: auto; background: radial-gradient(circle at 12% 8%, #2878b8 0, transparent 31%), linear-gradient(160deg, #082f57 0%, var(--blue-deep) 62%, #071f3b 100%); box-shadow: 12px 0 32px #08264718; }
+      .brand { display: block; width: fit-content; padding: 8px 10px; border: 1px solid #ffffff1f; border-radius: 12px; background: #ffffff0b; }
+      .side img { display: block; width: 150px; height: 48px; object-fit: contain; object-position: left center; }
+      .nav-label { margin: 31px 10px 9px; color: #a9cce8; font-size: 10px; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
+      .nav { display: grid; gap: 6px; }
+      .nav a { position: relative; display: flex; align-items: center; min-height: 44px; padding: 11px 13px 11px 17px; border: 1px solid transparent; border-radius: 10px; color: #dcecff; text-decoration: none; font-size: 14px; font-weight: 700; transition: background .16s ease, border-color .16s ease, transform .16s ease; }
+      .nav a::before { width: 5px; height: 5px; margin-right: 10px; border-radius: 50%; background: #8dc7ef; content: ''; opacity: .72; }
+      .nav a.active { border-color: #ffffff25; background: linear-gradient(90deg, #ffffff2c, #ffffff13); color: #fff; box-shadow: 0 8px 18px #031b351c; }
+      .nav a.active::before { background: var(--orange); box-shadow: 0 0 0 4px #ff9b4926; opacity: 1; }
+      .nav a:hover { border-color: #ffffff20; background: #ffffff14; color: #fff; transform: translateX(2px); }
+      .nav a:focus-visible, .btn:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid #f7ad67; outline-offset: 3px; }
+      .page { width: min(1240px, calc(100% - 64px)); margin: 0 auto; padding: 42px 0 72px; }
       .header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; flex-wrap: wrap; }
       .eyebrow { margin: 0 0 6px; color: var(--orange); font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
       h1, h2 { color: var(--blue-deep); }
       h1 { margin: 0; font-size: clamp(32px, 5vw, 46px); letter-spacing: -1.8px; }
       .muted { color: var(--muted); }
-      .btn { padding: 10px 14px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--blue-deep); font: 700 14px inherit; cursor: pointer; }
-      .btn:hover { border-color: var(--orange); }
+      .btn { min-height: 42px; padding: 10px 15px; border: 1px solid var(--line); border-radius: 9px; background: #fff; box-shadow: 0 3px 10px #1453880b; color: var(--blue-deep); font: 700 14px inherit; cursor: pointer; transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease; }
+      .btn:hover:not(:disabled) { border-color: var(--orange); box-shadow: 0 7px 15px #14538814; transform: translateY(-1px); }
       .filters { display: grid; grid-template-columns: repeat(6, minmax(130px, 1fr)); gap: 14px; margin: 26px 0 18px; padding: 18px; border: 1px solid var(--line); border-radius: 14px; background: #fff; box-shadow: 0 10px 24px #14538812; }
       .filter { display: grid; gap: 6px; }
       .filter label { color: var(--blue-deep); font-size: 12px; font-weight: 800; }
@@ -56,16 +62,17 @@
       .badge { display: inline-block; padding: 5px 8px; border-radius: 999px; background: #e5f2ff; color: var(--blue-deep); font-size: 12px; font-weight: 800; white-space: nowrap; }
       .badge.approved { background: #ddf7e7; color: #126337; }
       .empty { margin-top: 14px; padding: 22px; border: 1px dashed var(--line); border-radius: 12px; color: var(--muted); text-align: center; }
-      @media (max-width: 1080px) { .filters { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-      @media (max-width: 760px) { .app { grid-template-columns: 1fr; } .side { padding: 14px; } .nav { grid-template-columns: repeat(2, 1fr); margin-top: 8px; } .page { width: min(100% - 28px, 1240px); } .filters, .summary { grid-template-columns: 1fr 1fr; } .filter-wide { grid-column: span 2; } .filter-actions { grid-column: span 2; } }
+      @media (max-width: 1080px) { .app { grid-template-columns: 224px minmax(0, 1fr); } .page { width: min(100% - 42px, 1240px); } .filters { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+      @media (max-width: 760px) { .app { display: block; } .side { position: static; display: block; height: auto; padding: 12px 14px 13px; overflow: hidden; } .brand { padding: 2px 7px; border: 0; background: transparent; } .side img { width: 132px; height: 38px; } .nav-label { display: none; } .nav { display: flex; gap: 8px; margin: 10px -14px -13px; padding: 10px 14px 13px; overflow-x: auto; scrollbar-width: none; border-top: 1px solid #ffffff19; } .nav::-webkit-scrollbar { display: none; } .nav a { flex: 0 0 auto; min-height: 40px; padding: 9px 12px; font-size: 13px; white-space: nowrap; } .nav a::before { width: 4px; height: 4px; margin-right: 7px; } .nav a:hover { transform: none; } .page { width: min(100% - 28px, 1240px); padding: 28px 0 52px; } .filters, .summary { grid-template-columns: 1fr 1fr; } .filter-wide { grid-column: span 2; } .filter-actions { grid-column: span 2; } }
       @media (max-width: 480px) { .filters, .summary { grid-template-columns: 1fr; } .filter-wide, .filter-actions { grid-column: auto; } }
     </style>
   </head>
   <body>
     <main class="app">
       <aside class="side">
-          <a href="admin-dashboard.html"><img src="images/company-logo.png" alt="Aihuishou Electricals" /></a>
-        <nav class="nav">
+        <a class="brand" href="admin-dashboard.html"><img src="images/company-logo.png" alt="Aihuishou Electricals" /></a>
+        <p class="nav-label">Operations workspace</p>
+        <nav class="nav" aria-label="Operations navigation">
           <a data-view="overview" href="admin-dashboard.html">Overview &amp; unapproved</a>
           <a class="admin-only" data-view="applications" href="admin-dashboard.html?view=applications">Agent applications</a>
           <a data-view="pickup-dates" href="admin-dashboard.html?view=pickup-dates">Pickup dates approval</a>
@@ -160,6 +167,9 @@
       const roleLabel = (request) => requestRole(request) === 'fieldEmployee' ? 'Field employee' : 'Agent';
       const isTicket = (request) => request.requestType === 'fieldEmployee' || request.requestType === 'agentTicket';
       const isPickup = (request) => !isTicket(request);
+      const reportDateFor = (request) => isTicket(request) && request.status === 'Approved'
+        ? (request.approvedAt || request.updatedAt || request.resubmittedAt || request.createdAt)
+        : (request.resubmittedAt || request.createdAt);
       const selectedNoun = () => controls.reportType.value === 'tickets' ? 'ticket' : 'pickup request';
       const selectedNounPlural = () => controls.reportType.value === 'tickets' ? 'tickets' : 'pickup requests';
       const lineTotal = (good) => {
@@ -239,11 +249,11 @@
         const wrap = document.createElement('div');
         wrap.className = 'table-wrap';
         const table = document.createElement('table');
-        table.innerHTML = '<thead><tr><th>Created</th><th>Employee / agent (once per ticket)</th><th>Goods · quantity · unit price · line total</th><th>Total quantity</th><th>Combined amount</th><th>Status</th><th>Pickup date</th><th>Pickup details</th></tr></thead>';
+        table.innerHTML = `<thead><tr><th>${controls.reportType.value === 'tickets' ? 'Approved' : 'Created'}</th><th>Employee / agent (once per ticket)</th><th>Goods · quantity · unit price · line total</th><th>Total quantity</th><th>Combined amount</th><th>Status</th><th>Pickup date</th><th>Pickup details</th></tr></thead>`;
         const body = document.createElement('tbody');
         items.forEach((request) => {
           const row = document.createElement('tr');
-          addCell(row, formatDate(request.createdAt));
+          addCell(row, formatDate(reportDateFor(request)));
           const person = document.createElement('div');
           person.innerHTML = '<span class="person-name"></span><span class="subtle"></span>';
           person.querySelector('.person-name').textContent = personName(request);
@@ -312,10 +322,10 @@
       function downloadReport(items) {
         const rows = [['Report type', controls.reportType.value === 'tickets' ? 'Approved tickets' : 'Pickup requests'], []];
         rows.push(['ALL ORDERS', '', '', '', '', '', '', '']);
-        rows.push(['Employee / agent', 'Role', 'Order ID', 'Date', 'Good', 'Quantity', 'Unit price', 'Line amount']);
+        rows.push(['Employee / agent', 'Role', 'Order ID', controls.reportType.value === 'tickets' ? 'Approved date' : 'Created date', 'Good', 'Quantity', 'Unit price', 'Line amount']);
         items.forEach((request) => {
           const goods = Array.isArray(request.goods) ? request.goods : [];
-          const orderDetails = [personName(request), roleLabel(request), request.id || '', reportDate(request.resubmittedAt || request.createdAt)];
+          const orderDetails = [personName(request), roleLabel(request), request.id || '', reportDate(reportDateFor(request))];
           if (!goods.length) {
             rows.push([...orderDetails, 'No goods recorded', '', '', '']);
             return;
