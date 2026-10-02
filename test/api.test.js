@@ -616,3 +616,18 @@ test("accountants can edit an expense and its original details remain in a track
   assert.equal(result.body.revisions[0].before.expenseType, "Meal");
   assert.equal(result.body.revisions[0].changes.amount, 250);
 });
+
+test("only administrators can delete expenses and the deletion is audited", async () => {
+  const expense = { id: "delete-expense", employeeEmail: "delete-person@example.com", employeeName: "Delete Person", expenseType: "Meal", amount: 200, spentOn: "2026-10-02", createdAt: new Date().toISOString() };
+  const accountant = passwordAccount("delete-expense-accountant@example.com", "accountant-password", { role: "accountant" });
+  collection("agent_accounts").records.push(accountant);
+  collection("employee_expenses").records.push(expense);
+  const adminCookie = signedSessionCookie("admin_session", { admin: true, sessionVersion: 0 });
+  const accountantCookie = signedSessionCookie("accountant_session", { email: accountant.email, role: "accountant", sessionVersion: 0 });
+  let result = await request("/api/operations/expenses/delete-expense", { method: "DELETE", headers: { cookie: accountantCookie, "content-type": "application/json" }, body: JSON.stringify({ reason: "Duplicate" }) });
+  assert.equal(result.response.status, 401);
+  result = await request("/api/operations/expenses/delete-expense", { method: "DELETE", headers: { cookie: adminCookie, "content-type": "application/json" }, body: JSON.stringify({ reason: "Duplicate entry" }) });
+  assert.equal(result.response.status, 200);
+  assert.equal(await collection("employee_expenses").findOne({ id: expense.id }), null);
+  assert.ok(collection("security_audit_log").records.some((event) => event.action === "expense.deleted" && event.metadata.reason === "Duplicate entry"));
+});

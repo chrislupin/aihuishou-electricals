@@ -3024,6 +3024,24 @@ app.get("/api/operations/expenses/:id/revisions", requireOperationsViewer, async
   }
 });
 
+app.delete("/api/operations/expenses/:id", requireAdmin, async (req, res) => {
+  const reason = applicationField(req.body?.reason, 500);
+  if (!reason) return res.status(400).json({ error: "A deletion reason is required." });
+  try {
+    const expense = withoutMongoId(await expensesCollection.findOne({ id: req.params.id }));
+    if (!expense) return res.status(404).json({ error: "Expense record not found." });
+    const result = await expensesCollection.deleteOne({ id: expense.id });
+    if (!result.deletedCount) return res.status(409).json({ error: "This expense is no longer available to delete." });
+    // Revision records deliberately remain to preserve the audit history of a
+    // financial deletion, while the entry itself is removed from reports.
+    await recordSecurityEvent(req, "expense.deleted", { id: expense.id, employeeEmail: expense.employeeEmail }, { reason, expense: { employeeName: expense.employeeName, expenseType: expense.expenseType, amount: expense.amount, spentOn: expense.spentOn } });
+    return res.json({ message: "Expense deleted." });
+  } catch (error) {
+    console.error("Expense deletion failed:", error.message);
+    return res.status(500).json({ error: "Unable to delete this expense." });
+  }
+});
+
 app.post("/api/operations/expense-report-exports", requestLimiter, requireOperationsViewer, async (req, res) => {
   try {
     await recordSecurityEvent(req, "expense_report.exported", {}, { from: req.body?.from || "", to: req.body?.to || "" });
