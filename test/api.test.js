@@ -631,3 +631,22 @@ test("only administrators can delete expenses and the deletion is audited", asyn
   assert.equal(await collection("employee_expenses").findOne({ id: expense.id }), null);
   assert.ok(collection("security_audit_log").records.some((event) => event.action === "expense.deleted" && event.metadata.reason === "Duplicate entry"));
 });
+
+test("administrators and accountants can view live goods totals", async () => {
+  const accountant = passwordAccount("goods-accountant@example.com", "accountant-password", { role: "accountant" });
+  collection("agent_accounts").records.push(accountant);
+  collection("pickup_requests").records.push(
+    { id: "goods-live-one", requestType: "agentTicket", status: "Approved", goods: [{ name: "Live Summary LCDs", quantity: 2, amount: 800, totalAmount: 1600 }] },
+    { id: "goods-live-two", requestType: "fieldEmployee", status: "Pending approval", goods: [{ name: "Live Summary LCDs", quantity: 1, amount: 750, totalAmount: 750 }, { name: "Live Summary Tablets", quantity: 3, amount: 40, totalAmount: 120 }] }
+  );
+  const adminCookie = signedSessionCookie("admin_session", { admin: true, sessionVersion: 0 });
+  const accountantCookie = signedSessionCookie("accountant_session", { email: accountant.email, role: "accountant", sessionVersion: 0 });
+  let result = await request("/api/operations/goods-summary", { headers: { cookie: adminCookie } });
+  assert.equal(result.response.status, 200);
+  const lcds = result.body.items.find((item) => item.name === "Live Summary LCDs");
+  assert.equal(lcds.quantity, 3);
+  assert.equal(lcds.amount, 2350);
+  assert.equal(lcds.approvedQuantity, 2);
+  result = await request("/api/operations/goods-summary", { headers: { cookie: accountantCookie } });
+  assert.equal(result.response.status, 200);
+});

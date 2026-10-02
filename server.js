@@ -239,6 +239,7 @@ const publicPageFiles = new Set([
   "admin-dashboard.html",
   "admin-analysis.html",
   "expenses.html",
+  "goods.html",
   "admin-audit.html",
   "accountant-login.html",
   "accountant-signup.html",
@@ -2489,6 +2490,36 @@ app.get("/api/operations/employees", requireOperationsViewer, async (req, res) =
   } catch (error) {
     console.error("Operations employee lookup failed:", error.message);
     return res.status(500).json({ error: "Unable to load employees." });
+  }
+});
+
+app.get("/api/operations/goods-summary", requireOperationsViewer, async (req, res) => {
+  try {
+    const requests = await readPickupRequests();
+    const goods = new Map();
+    requests.forEach((request) => {
+      (request.goods || []).forEach((item) => {
+        const name = applicationField(item?.name, 160) || "Unnamed good";
+        const quantity = Number(item?.quantity);
+        const unitAmount = Number(item?.amount);
+        const lineAmount = Number(item?.totalAmount);
+        const entry = goods.get(name) || { name, quantity: 0, amount: 0, ticketCount: 0, approvedQuantity: 0, approvedAmount: 0 };
+        if (Number.isFinite(quantity)) entry.quantity += quantity;
+        const amount = Number.isFinite(lineAmount) ? lineAmount : (Number.isFinite(quantity) && Number.isFinite(unitAmount) ? quantity * unitAmount : 0);
+        if (Number.isFinite(amount)) entry.amount += amount;
+        entry.ticketCount += 1;
+        if (request.status === "Approved") {
+          if (Number.isFinite(quantity)) entry.approvedQuantity += quantity;
+          if (Number.isFinite(amount)) entry.approvedAmount += amount;
+        }
+        goods.set(name, entry);
+      });
+    });
+    const items = [...goods.values()].sort((first, second) => first.name.localeCompare(second.name));
+    return res.json({ items, updatedAt: new Date().toISOString() });
+  } catch (error) {
+    console.error("Goods summary lookup failed:", error.message);
+    return res.status(500).json({ error: "Unable to load the goods summary." });
   }
 });
 

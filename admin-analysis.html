@@ -85,6 +85,7 @@
           <a data-view="pickup-dates" href="admin-dashboard.html?view=pickup-dates">Pickup dates approval</a>
           <a data-view="approved-fields" href="admin-dashboard.html?view=approved-fields">Ticket Center</a>
           <a data-view="expenses" href="expenses.html">Expenses</a>
+          <a data-view="goods" href="goods.html">Goods</a>
           <a class="admin-only" data-view="accounts" href="admin-dashboard.html?view=accounts">Manage employees and agents</a>
           <a class="active" href="admin-analysis.html">Analysis</a>
           <a class="admin-only" href="admin-audit.html">Audit log</a>
@@ -174,6 +175,8 @@
         });
         const expenseLink = document.querySelector('[data-view="expenses"]');
         if (expenseLink) expenseLink.href = 'expenses.html?role=accountant';
+        const goodsLink = document.querySelector('[data-view="goods"]');
+        if (goodsLink) goodsLink.href = 'goods.html?role=accountant';
         document.querySelector('.eyebrow').textContent = 'Accountant analysis';
       }
 
