@@ -461,6 +461,22 @@ test("ticket history keeps older rejected tickets actionable and report filters 
   assert.deepEqual(result.body.requests.map((item) => item.id), ["resubmitted-ticket"]);
 });
 
+test("report filters accept multiple selected employees", async () => {
+  const first = passwordAccount("report-first@example.com", "report-password", { fullName: "First Reporter" });
+  const second = passwordAccount("report-second@example.com", "report-password", { fullName: "Second Reporter" });
+  const excluded = passwordAccount("report-excluded@example.com", "report-password", { fullName: "Excluded Reporter" });
+  collection("agent_accounts").records.push(first, second, excluded);
+  collection("pickup_requests").records.push(
+    { id: "report-first-ticket", agentEmail: first.email, requestType: "agentTicket", status: "Approved", goods: [], createdAt: new Date().toISOString() },
+    { id: "report-second-ticket", agentEmail: second.email, requestType: "agentTicket", status: "Approved", goods: [], createdAt: new Date().toISOString() },
+    { id: "report-excluded-ticket", agentEmail: excluded.email, requestType: "agentTicket", status: "Approved", goods: [], createdAt: new Date().toISOString() }
+  );
+  const adminCookie = signedSessionCookie("admin_session", { admin: true, sessionVersion: 0 });
+  const result = await request(`/api/admin/pickup-requests?reportType=tickets&status=Approved&person=${encodeURIComponent(first.email)}&person=${encodeURIComponent(second.email)}`, { headers: { cookie: adminCookie } });
+  assert.equal(result.response.status, 200);
+  assert.deepEqual(new Set(result.body.requests.map((item) => item.id)), new Set(["report-first-ticket", "report-second-ticket"]));
+});
+
 test("administrators and accountants can delete finalized tickets", async () => {
   const adminCookie = await login("/api/admin-login", "admin@example.com", "admin-password", "admin_session");
   collection("agent_accounts").records.push(passwordAccount("delete-accountant@example.com", "accountant-password", { role: "accountant" }));
@@ -664,6 +680,37 @@ test("administrators and accountants can view goods totals from approved tickets
   assert.equal(result.body.items.some((item) => item.name === "Live Summary Tablets"), false);
   result = await request("/api/operations/goods-summary", { headers: { cookie: accountantCookie } });
   assert.equal(result.response.status, 200);
+});
+
+test("report totals and goods subtotals are derived from line items in cents", async () => {
+  const agent = passwordAccount("accurate-report@example.com", "report-password", { fullName: "Accurate Reporter" });
+  collection("agent_accounts").records.push(agent);
+  collection("pickup_requests").records.push({
+    id: "accurate-report-ticket",
+    agentEmail: agent.email,
+    requestType: "agentTicket",
+    status: "Approved",
+    createdAt: new Date().toISOString(),
+    // These saved totals intentionally disagree with the source fields. They
+    // must never change the line, employee, or report total.
+    totalAmount: 9999,
+    goods: [
+      { name: "Accurate Report Cable", quantity: 1, amount: 0.1, totalAmount: 4000 },
+      { name: "Accurate Report Cable", quantity: 1, amount: 0.2, totalAmount: 5000 },
+      { name: "Accurate Report Device", quantity: 3, amount: 19.995, totalAmount: 0 }
+    ]
+  });
+  const adminCookie = signedSessionCookie("admin_session", { admin: true, sessionVersion: 0 });
+  let result = await request(`/api/admin/pickup-requests?reportType=tickets&status=Approved&person=${encodeURIComponent(agent.email)}`, { headers: { cookie: adminCookie } });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.requests.length, 1);
+  assert.equal(result.body.requests[0].totalAmount, 60.29);
+  assert.deepEqual(result.body.requests[0].goods.map((item) => item.totalAmount), [0.1, 0.2, 59.99]);
+
+  result = await request("/api/operations/goods-summary", { headers: { cookie: adminCookie } });
+  assert.equal(result.response.status, 200);
+  assert.deepEqual(result.body.items.find((item) => item.name === "Accurate Report Cable"), { name: "Accurate Report Cable", quantity: 2, amount: 0.3 });
+  assert.deepEqual(result.body.items.find((item) => item.name === "Accurate Report Device"), { name: "Accurate Report Device", quantity: 3, amount: 59.99 });
 });
 
 test("agents and field employees can view collective goods totals for the current month", async () => {

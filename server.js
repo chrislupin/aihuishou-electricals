@@ -514,25 +514,37 @@ function rejectBotSubmission(req, res, next) {
   return next();
 }
 
-function calculateRequestTotal(goods) {
-  if (!Array.isArray(goods)) {
-    return 0;
+// Monetary totals are always derived from the source fields and accumulated in
+// cents. This prevents a stale saved total or floating-point arithmetic from
+// making a report total differ from its line-item subtotals.
+function currencyCents(value) {
+  const amount = Number(value);
+  return Number.isFinite(amount) ? Math.round((amount + Number.EPSILON) * 100) : 0;
+}
+
+function currencyFromCents(cents) {
+  return cents / 100;
+}
+
+function calculateLineTotal(item) {
+  const quantity = Number(item?.quantity);
+  const amount = Number(item?.amount);
+
+  if (Number.isFinite(quantity) && Number.isFinite(amount)) {
+    return currencyFromCents(currencyCents(quantity * amount));
   }
 
-  return goods.reduce((total, item) => {
-    const storedTotal = Number(item?.totalAmount);
+  // Older records can lack source fields. Retain their recorded value rather
+  // than dropping them from historical reports.
+  return currencyFromCents(currencyCents(item?.totalAmount));
+}
 
-    if (Number.isFinite(storedTotal)) {
-      return total + storedTotal;
-    }
-
-    const quantity = Number(item?.quantity);
-    const amount = Number(item?.amount);
-
-    return Number.isFinite(quantity) && Number.isFinite(amount)
-      ? total + quantity * amount
-      : total;
-  }, 0);
+function calculateRequestTotal(goods) {
+  if (!Array.isArray(goods)) return 0;
+  return currencyFromCents(goods.reduce(
+    (totalCents, item) => totalCents + currencyCents(calculateLineTotal(item)),
+    0
+  ));
 }
 
 function requestPreferredDate(request) {
@@ -651,7 +663,10 @@ function agentGoodsSinceLastPickup(agentEmail, pickupRequests) {
     : agentRequests;
 
   return {
-    totalAmount: requestsSinceLastPickup.reduce((total, request) => total + calculateRequestTotal(request.goods), 0),
+    totalAmount: currencyFromCents(requestsSinceLastPickup.reduce(
+      (totalCents, request) => totalCents + currencyCents(calculateRequestTotal(request.goods)),
+      0
+    )),
     totalQuantity: requestsSinceLastPickup.reduce((total, request) => total + (request.goods || []).reduce((sum, good) => sum + (Number(good.quantity) || 0), 0), 0),
     lastPickupDate: lastPickup ? requestPreferredDate(lastPickup) : "",
     lastPickupAt: cutoffValue || ""
@@ -2205,12 +2220,10 @@ app.get("/api/current-month-goods-summary", requirePickupUser, async (req, res) 
         (request.goods || []).forEach((good) => {
           const name = applicationField(good?.name, 160) || "Unnamed good";
           const quantity = Number(good?.quantity);
-          const storedTotal = Number(good?.totalAmount);
-          const amount = Number(good?.amount);
-          const lineAmount = Number.isFinite(storedTotal) ? storedTotal : (Number.isFinite(quantity) && Number.isFinite(amount) ? quantity * amount : 0);
+          const lineAmount = calculateLineTotal(good);
           const item = totals.get(name) || { name, quantity: 0, amount: 0 };
           if (Number.isFinite(quantity)) item.quantity += quantity;
-          if (Number.isFinite(lineAmount)) item.amount += lineAmount;
+          if (Number.isFinite(lineAmount)) item.amount = currencyFromCents(currencyCents(item.amount) + currencyCents(lineAmount));
           totals.set(name, item);
         });
       });
@@ -2218,7 +2231,7 @@ app.get("/api/current-month-goods-summary", requirePickupUser, async (req, res) 
     return res.json({
       month: monthKey,
       totalQuantity: items.reduce((sum, item) => sum + item.quantity, 0),
-      totalAmount: items.reduce((sum, item) => sum + item.amount, 0),
+      totalAmount: currencyFromCents(items.reduce((sum, item) => sum + currencyCents(item.amount), 0)),
       items
     });
   } catch (error) {
@@ -2453,10 +2466,14 @@ app.get(
               accountByEmail.get(
                 request.agentEmail
               );
+            const goods = Array.isArray(request.goods)
+              ? request.goods.map((item) => ({ ...item, totalAmount: calculateLineTotal(item) }))
+              : [];
 
             return {
               ...request,
-              totalAmount: calculateRequestTotal(request.goods),
+              goods,
+              totalAmount: calculateRequestTotal(goods),
               preferredDate: requestPreferredDate(request),
               agent: agent
                 ? {
@@ -2481,7 +2498,9 @@ app.get(
       const reportType = typeof req.query?.reportType === "string" ? req.query.reportType : "";
       const status = typeof req.query?.status === "string" ? req.query.status : "";
       const role = typeof req.query?.role === "string" ? req.query.role : "";
-      const person = normalizeEmail(req.query?.person);
+      const people = (Array.isArray(req.query?.person) ? req.query.person : [req.query?.person])
+        .map(normalizeEmail)
+        .filter(Boolean);
       const filteredRequests = adminRequests.filter((request) => {
         const ticket = request.requestType === "fieldEmployee" || request.requestType === "agentTicket";
         if (reportType === "tickets" && !ticket) return false;
@@ -2489,7 +2508,7 @@ app.get(
         if (status && request.status !== status) return false;
         if (role === "agent" && request.requestType === "fieldEmployee") return false;
         if (role === "fieldEmployee" && request.requestType !== "fieldEmployee") return false;
-        if (person && normalizeEmail(request.agentEmail) !== person) return false;
+        if (people.length && !people.includes(normalizeEmail(request.agentEmail))) return false;
         return matchesAdminReportDate(ticketReportAt(request), range, from, to);
       });
 
@@ -2533,12 +2552,10 @@ app.get("/api/operations/goods-summary", requireOperationsViewer, async (req, re
       (request.goods || []).forEach((item) => {
         const name = applicationField(item?.name, 160) || "Unnamed good";
         const quantity = Number(item?.quantity);
-        const unitAmount = Number(item?.amount);
-        const lineAmount = Number(item?.totalAmount);
+        const lineAmount = calculateLineTotal(item);
         const entry = goods.get(name) || { name, quantity: 0, amount: 0 };
         if (Number.isFinite(quantity)) entry.quantity += quantity;
-        const amount = Number.isFinite(lineAmount) ? lineAmount : (Number.isFinite(quantity) && Number.isFinite(unitAmount) ? quantity * unitAmount : 0);
-        if (Number.isFinite(amount)) entry.amount += amount;
+        if (Number.isFinite(lineAmount)) entry.amount = currencyFromCents(currencyCents(entry.amount) + currencyCents(lineAmount));
         goods.set(name, entry);
       });
     });
@@ -3353,7 +3370,7 @@ app.post(
       const amount = isAgentPickup || !canSetGoodsPrices(req.agent)
         ? (isAgentPickup ? 0 : (goodsPricesFor(req.agent)[name] ?? Number(item.amount)))
         : Number(item.amount);
-      return { name, quantity: Number(item.quantity), amount, totalAmount: isAgentPickup ? 0 : amount * Number(item.quantity) };
+      return { name, quantity: Number(item.quantity), amount, totalAmount: isAgentPickup ? 0 : calculateLineTotal({ quantity: item.quantity, amount }) };
     });
 
     const goodsText =
@@ -3635,7 +3652,7 @@ app.put(
       const amount = canSetGoodsPrices(req.agent)
         ? Number(item.amount)
         : (goodsPricesFor(req.agent)[name] ?? Number(item.amount));
-      return { name, quantity: Number(item.quantity), amount, totalAmount: amount * Number(item.quantity) };
+      return { name, quantity: Number(item.quantity), amount, totalAmount: calculateLineTotal({ quantity: item.quantity, amount }) };
     });
     const now = new Date().toISOString();
 

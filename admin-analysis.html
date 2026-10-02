@@ -39,6 +39,8 @@
       .filter { display: grid; gap: 6px; }
       .filter label { color: var(--blue-deep); font-size: 12px; font-weight: 800; }
       .filter input, .filter select { width: 100%; min-height: 40px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: #f8fcff; font: inherit; }
+      .filter select[multiple] { min-height: 132px; padding: 5px; }
+      .filter-hint { color: var(--muted); font-size: 11px; font-weight: 500; line-height: 1.25; }
       .filter-wide { grid-column: span 2; }
       .filter-actions { display: flex; align-items: end; }
       .filter-actions .btn { width: 100%; min-height: 40px; }
@@ -111,8 +113,9 @@
             <input id="search" type="search" placeholder="Employee, email, good, location or note" />
           </div>
           <div class="filter">
-            <label for="person">Employee / agent</label>
-            <select id="person"><option value="">All people</option></select>
+            <label for="person">Employees / agents</label>
+            <select id="person" multiple aria-describedby="personHint"></select>
+            <small class="filter-hint" id="personHint">Select one or more people. Leave empty for everyone.</small>
           </div>
           <div class="filter">
             <label for="role">Role</label>
@@ -144,7 +147,7 @@
           <article class="metric"><span>Combined amount</span><strong id="amountTotal">KSh 0.00</strong><small class="metric-period" id="amountPeriod">All time</small></article>
         </section>
 
-        <div class="report-head"><h2 id="detailTitle">Detailed approved tickets</h2><div class="report-download"><button class="btn" id="generateReport" type="button">Generate &amp; download report</button><span class="count" id="resultCount"></span><p class="report-status" id="reportStatus" role="status" aria-live="polite"></p></div></div>
+        <div class="report-head"><h2 id="detailTitle">Detailed approved tickets</h2><div class="report-download"><button class="btn" id="generateReport" type="button">Download styled report</button><span class="count" id="resultCount"></span><p class="report-status" id="reportStatus" role="status" aria-live="polite"></p></div></div>
         <div id="results"></div>
       </section>
     </main>
@@ -180,9 +183,9 @@
         document.querySelector('.eyebrow').textContent = 'Accountant analysis';
       }
 
-      const formatDate = (value) => new Intl.DateTimeFormat('en-KE', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
+      const formatDate = (value) => { const date = new Date(value); return Number.isNaN(date.getTime()) ? 'Unknown date' : new Intl.DateTimeFormat('en-KE', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Africa/Nairobi' }).format(date); };
       const formatCurrency = (value) => `KSh ${Number(value || 0).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-      const formatPickupDate = (value) => { if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return value || 'Flexible'; const date = new Date(`${value}T00:00:00`); return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat('en-KE', { dateStyle: 'medium' }).format(date); };
+      const formatPickupDate = (value) => { if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return value || 'Flexible'; const date = new Date(`${value}T12:00:00Z`); return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat('en-KE', { dateStyle: 'medium', timeZone: 'Africa/Nairobi' }).format(date); };
       const requestRole = (request) => request.requestType === 'fieldEmployee' ? 'fieldEmployee' : 'agent';
       const isMombasaAgent = (request) => String(request.agentEmail || '').toLocaleLowerCase() === 'gisorebarrack5@gmail.com';
       const roleLabel = (request) => isMombasaAgent(request) ? 'Mombasa Agent' : (requestRole(request) === 'fieldEmployee' ? 'Field employee' : 'Agent');
@@ -193,19 +196,24 @@
         : (request.resubmittedAt || request.createdAt);
       const selectedNoun = () => controls.reportType.value === 'tickets' ? 'ticket' : 'pickup request';
       const selectedNounPlural = () => controls.reportType.value === 'tickets' ? 'tickets' : 'pickup requests';
+      const currencyCents = (value) => { const amount = Number(value); return Number.isFinite(amount) ? Math.round((amount + Number.EPSILON) * 100) : 0; };
+      const currencyFromCents = (cents) => cents / 100;
+      const addCurrency = (first, second) => currencyFromCents(currencyCents(first) + currencyCents(second));
+      const sumCurrency = (values) => currencyFromCents(values.reduce((total, value) => total + currencyCents(value), 0));
       const lineTotal = (good) => {
-        const saved = Number(good.totalAmount);
-        if (Number.isFinite(saved)) return saved;
         const quantity = Number(good.quantity);
         const amount = Number(good.amount);
-        return Number.isFinite(quantity) && Number.isFinite(amount) ? quantity * amount : 0;
+        // Recalculate current records from their source fields. A saved total
+        // is retained only for legacy rows without enough source information.
+        return Number.isFinite(quantity) && Number.isFinite(amount)
+          ? currencyFromCents(currencyCents(quantity * amount))
+          : currencyFromCents(currencyCents(good.totalAmount));
       };
-      const requestTotal = (request) => {
-        const saved = Number(request.totalAmount);
-        return Number.isFinite(saved) ? saved : (request.goods || []).reduce((total, good) => total + lineTotal(good), 0);
-      };
+      const requestTotal = (request) => sumCurrency((request.goods || []).map(lineTotal));
       const requestQuantity = (request) => (request.goods || []).reduce((total, good) => total + (Number(good.quantity) || 0), 0);
       const personName = (request) => request.agent?.fullName || request.agentEmail || 'Unknown person';
+      const personKey = (request) => request.agentEmail || `${personName(request)}|${roleLabel(request)}`;
+      const selectedPeople = () => [...controls.person.selectedOptions].map((option) => option.value).filter(Boolean);
       const preferredDate = (request) => formatPickupDate(request.preferredDate || request.preferredTime);
 
       function startOfWeek(value) {
@@ -225,7 +233,8 @@
         return requests.filter((request) => {
           if (controls.reportType.value === 'tickets' && (!isTicket(request) || request.status !== 'Approved')) return false;
           if (controls.reportType.value === 'pickups' && !isPickup(request)) return false;
-          if (controls.person.value && request.agentEmail !== controls.person.value) return false;
+          const people = selectedPeople();
+          if (people.length && !people.includes(request.agentEmail)) return false;
           if (controls.role.value && requestRole(request) !== controls.role.value) return false;
           if (controls.status.value && request.status !== controls.status.value) return false;
           if (!isInDateRange(request)) return false;
@@ -238,9 +247,9 @@
       function renderSummary(items) {
         $('#requestLabel').textContent = controls.reportType.value === 'tickets' ? 'Approved tickets' : 'Pickup requests';
         $('#requestCount').textContent = items.length.toLocaleString('en-KE');
-        $('#peopleCount').textContent = new Set(items.map((request) => request.agentEmail)).size.toLocaleString('en-KE');
+        $('#peopleCount').textContent = new Set(items.map(personKey)).size.toLocaleString('en-KE');
         $('#quantityTotal').textContent = items.reduce((total, request) => total + requestQuantity(request), 0).toLocaleString('en-KE');
-        $('#amountTotal').textContent = formatCurrency(items.reduce((total, request) => total + requestTotal(request), 0));
+        $('#amountTotal').textContent = formatCurrency(sumCurrency(items.map(requestTotal)));
         const selectedRange = controls.range.options[controls.range.selectedIndex]?.textContent || 'All time';
         const customLabel = controls.range.value === 'custom' && (controls.from.value || controls.to.value)
           ? `${controls.from.value || 'Start'} → ${controls.to.value || 'Today'}`
@@ -319,12 +328,7 @@
         const date = new Date(value);
         return Number.isNaN(date.getTime())
           ? 'Unknown date'
-          : new Intl.DateTimeFormat('en-KE', { dateStyle: 'medium' }).format(date);
-      }
-
-      function csvCell(value) {
-        const text = String(value ?? '');
-        return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+          : new Intl.DateTimeFormat('en-KE', { dateStyle: 'medium', timeZone: 'Africa/Nairobi' }).format(date);
       }
 
       function csvAmount(value) {
@@ -332,23 +336,28 @@
         return Number.isFinite(amount) ? amount.toFixed(2) : '0.00';
       }
 
+      function escapeHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
+      }
+
       function reportFilename() {
         const role = controls.role.value || 'all-roles';
         const period = controls.range.value === 'custom'
           ? `${controls.from.value || 'start'}-to-${controls.to.value || 'today'}`
           : controls.range.value;
-        return `aihuishou-${controls.reportType.value}-report-${role}-${period}`.replace(/[^a-z0-9-]+/gi, '-').toLowerCase() + '.csv';
+        return `aihuishou-${controls.reportType.value}-report-${role}-${period}`.replace(/[^a-z0-9-]+/gi, '-').toLowerCase() + '.html';
       }
 
       function downloadReport(items) {
         const rows = [['Report type', controls.reportType.value === 'tickets' ? 'Approved tickets' : 'Pickup requests'], []];
-        rows.push(['ALL ORDERS', '', '', '', '', '', '', '']);
-        rows.push(['Employee / agent', 'Role', 'Order ID', controls.reportType.value === 'tickets' ? 'Approved date' : 'Created date', 'Good', 'Quantity', 'Unit price', 'Line amount']);
+        rows.push(['ALL ORDERS', '', '', '', '', '', '', '', '', '', '', '']);
+        rows.push(['Employee / agent', 'Role', 'Order ID', controls.reportType.value === 'tickets' ? 'Approved date' : 'Created date', 'Good', 'Quantity', 'Unit price', 'Line amount', 'Order total', 'Status', 'Pickup date', 'Pickup details']);
         items.forEach((request) => {
           const goods = Array.isArray(request.goods) ? request.goods : [];
           const orderDetails = [personName(request), roleLabel(request), request.id || '', reportDate(reportDateFor(request))];
+          const orderSummary = [csvAmount(requestTotal(request)), request.status || 'Pending approval', preferredDate(request), [request.location, request.notes].filter(Boolean).join(' · ') || '—'];
           if (!goods.length) {
-            rows.push([...orderDetails, 'No goods recorded', '', '', '']);
+            rows.push([...orderDetails, 'No goods recorded', '', '', ...orderSummary]);
             return;
           }
           goods.forEach((good) => {
@@ -357,14 +366,15 @@
               good.name || 'Unnamed good',
               Number(good.quantity) || 0,
               csvAmount(good.amount),
-              csvAmount(lineTotal(good))
+              csvAmount(lineTotal(good)),
+              ...orderSummary
             ]);
           });
         });
         rows.push([]);
         const people = new Map();
         items.forEach((request) => {
-          const key = request.agentEmail || `${personName(request)}|${roleLabel(request)}`;
+          const key = personKey(request);
           const person = people.get(key) || { name: personName(request), role: roleLabel(request), goods: new Map(), ticketCount: 0, totalQuantity: 0, totalAmount: 0 };
           person.ticketCount += 1;
           (request.goods || []).forEach((good) => {
@@ -373,9 +383,9 @@
             const quantity = Number(good.quantity) || 0;
             const amount = lineTotal(good);
             subtotal.quantity += quantity;
-            subtotal.amount += amount;
+            subtotal.amount = addCurrency(subtotal.amount, amount);
             person.totalQuantity += quantity;
-            person.totalAmount += amount;
+            person.totalAmount = addCurrency(person.totalAmount, amount);
             person.goods.set(goodName, subtotal);
           });
           people.set(key, person);
@@ -390,7 +400,7 @@
             const amount = lineTotal(good);
             const aggregate = goodsTotals.get(goodName) || { quantity: 0, amount: 0 };
             aggregate.quantity += quantity;
-            aggregate.amount += amount;
+            aggregate.amount = addCurrency(aggregate.amount, amount);
             goodsTotals.set(goodName, aggregate);
           });
         });
@@ -412,9 +422,23 @@
         [...goodsTotals.entries()].sort(([first], [second]) => first.localeCompare(second)).forEach(([name, totals]) => {
           rows.push(['', '', name, totals.quantity, csvAmount(totals.amount), '']);
         });
+        rows.push([]);
+        rows.push(['GRAND TOTAL', '', '', items.reduce((total, request) => total + requestQuantity(request), 0), csvAmount(sumCurrency(items.map(requestTotal))), '']);
 
-        const csv = '\uFEFF' + rows.map((row) => row.map(csvCell).join(',')).join('\r\n');
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+        const sectionTitles = new Set(['ALL ORDERS', 'EMPLOYEE / AGENT TOTALS', 'GOODS SUBTOTALS BY EMPLOYEE / AGENT', 'TOTALS BY GOOD']);
+        const columnHeaders = new Set(['Employee / agent', 'Employee / person']);
+        const reportRows = rows.map((row) => {
+          if (!row.length) return '<tr class="spacer"><td colspan="12">&nbsp;</td></tr>';
+          if (sectionTitles.has(row[0])) return `<tr class="section"><td colspan="12">${escapeHtml(row[0])}</td></tr>`;
+          if (row[0] === 'GRAND TOTAL') return `<tr class="grand">${row.map((value) => `<td>${escapeHtml(value)}</td>`).join('')}</tr>`;
+          const cell = columnHeaders.has(row[0]) ? 'th' : 'td';
+          return `<tr>${row.map((value) => `<${cell}>${escapeHtml(value)}</${cell}>`).join('')}</tr>`;
+        }).join('');
+        const reportTitle = controls.reportType.value === 'tickets' ? 'Approved tickets report' : 'Pickup requests report';
+        const period = controls.range.value === 'custom' ? `${controls.from.value || 'Start'} to ${controls.to.value || 'Today'}` : (controls.range.options[controls.range.selectedIndex]?.textContent || 'All time');
+        const generatedAt = formatDate(new Date().toISOString());
+        const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(reportTitle)}</title><style>body{margin:0;background:#eef4f8;color:#132b3f;font:14px/1.45 Arial,sans-serif}.report{max-width:1280px;margin:30px auto;padding:42px;background:#fff;box-shadow:0 14px 40px #082f5722}.masthead{display:flex;justify-content:space-between;gap:24px;padding-bottom:24px;border-bottom:4px solid #f08a3c}.brand{color:#0b416d;font-size:12px;font-weight:800;letter-spacing:.13em}.masthead h1{margin:6px 0;color:#082f57;font-size:30px}.masthead p{margin:0;color:#587084}.stamp{text-align:right;color:#587084;font-size:12px}.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:24px 0}.metric{padding:15px;border:1px solid #d6e3ec;border-radius:10px;background:#f7fbfe}.metric span{display:block;color:#587084;font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase}.metric strong{display:block;margin-top:5px;color:#082f57;font-size:20px}table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:10px;border-bottom:1px solid #dce7ee;text-align:left;vertical-align:top}th{background:#eaf4fa;color:#0b416d;font-size:10px;letter-spacing:.05em;text-transform:uppercase}.section td{padding:13px 10px;background:#082f57;color:#fff;font-size:11px;font-weight:800;letter-spacing:.08em}.grand td{background:#fff2e8;color:#082f57;font-weight:800}.spacer td{height:12px;padding:0;border:0}.footer{margin-top:25px;color:#587084;font-size:11px}@media print{body{background:#fff}.report{max-width:none;margin:0;padding:22px;box-shadow:none}@page{margin:12mm}}@media(max-width:760px){.report{margin:0;padding:22px}.masthead,.metrics{display:block}.stamp{text-align:left;margin-top:12px}.metric{margin:8px 0}table{font-size:11px}}</style></head><body><main class="report"><header class="masthead"><div><div class="brand">AIHUISHOU ELECTRICALS</div><h1>${escapeHtml(reportTitle)}</h1><p>${escapeHtml(period)} · ${items.length.toLocaleString('en-KE')} record${items.length === 1 ? '' : 's'}</p></div><div class="stamp">Generated ${escapeHtml(generatedAt)}<br>All amounts in KSh</div></header><section class="metrics"><div class="metric"><span>Records</span><strong>${items.length.toLocaleString('en-KE')}</strong></div><div class="metric"><span>People</span><strong>${new Set(items.map(personKey)).size.toLocaleString('en-KE')}</strong></div><div class="metric"><span>Total quantity</span><strong>${items.reduce((total, request) => total + requestQuantity(request), 0).toLocaleString('en-KE')}</strong></div><div class="metric"><span>Combined amount</span><strong>${escapeHtml(formatCurrency(sumCurrency(items.map(requestTotal))))}</strong></div></section><table>${reportRows}</table><p class="footer">Prepared from the selected Aihuishou operational records. This document is print-ready.</p></main></body></html>`;
+        const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
@@ -496,7 +520,7 @@
       function clearFilters() {
         controls.reportType.value = 'tickets';
         controls.search.value = '';
-        controls.person.value = '';
+        [...controls.person.options].forEach((option) => { option.selected = false; });
         controls.role.value = '';
         controls.status.value = '';
         controls.range.value = 'all';
@@ -512,7 +536,7 @@
           reportType: controls.reportType.value,
           range: controls.range.value
         });
-        if (controls.person.value) params.set('person', controls.person.value);
+        selectedPeople().forEach((person) => params.append('person', person));
         if (controls.role.value) params.set('role', controls.role.value);
         if (controls.status.value) params.set('status', controls.status.value);
         if (controls.from.value) params.set('from', controls.from.value);

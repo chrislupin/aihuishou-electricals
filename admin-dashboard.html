@@ -176,17 +176,10 @@
       const formatDate = (value) => new Intl.DateTimeFormat('en-KE', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
       const formatPickupDate = (value) => { if (!value) return 'Flexible / not provided'; const date = new Date(`${value}T00:00:00`); return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(date.getTime()) ? new Intl.DateTimeFormat('en-KE', { dateStyle: 'medium' }).format(date) : value; };
       const formatAmount = (amount) => Number(amount || 0).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-      const requestTotal = (request) => {
-        const saved = Number(request.totalAmount);
-        if (Number.isFinite(saved)) return saved;
-        return (request.goods || []).reduce((total, good) => {
-          const lineTotal = Number(good.totalAmount);
-          if (Number.isFinite(lineTotal)) return total + lineTotal;
-          const quantity = Number(good.quantity);
-          const amount = Number(good.amount);
-          return Number.isFinite(quantity) && Number.isFinite(amount) ? total + quantity * amount : total;
-        }, 0);
-      };
+       const currencyCents = (value) => { const amount = Number(value); return Number.isFinite(amount) ? Math.round((amount + Number.EPSILON) * 100) : 0; };
+       const currencyFromCents = (cents) => cents / 100;
+       const lineTotal = (good) => { const quantity = Number(good.quantity), amount = Number(good.amount); return Number.isFinite(quantity) && Number.isFinite(amount) ? currencyFromCents(currencyCents(quantity * amount)) : currencyFromCents(currencyCents(good.totalAmount)); };
+       const requestTotal = (request) => currencyFromCents((request.goods || []).reduce((total, good) => total + currencyCents(lineTotal(good)), 0));
       const isWithinDateRange = (request, fromValue, toValue) => {
         const reportDate = new Date(reportDateFor(request));
         if (Number.isNaN(reportDate.getTime())) return false;
@@ -241,8 +234,8 @@
           addRequestDetail(details, 'Goods, quantity, unit price and line total', (request.goods || []).map((good) => {
             const quantity = Number(good.quantity) || 0;
             const unitPrice = Number(good.amount) || 0;
-            const lineTotal = Number.isFinite(Number(good.totalAmount)) ? Number(good.totalAmount) : quantity * unitPrice;
-            return `${good.name || 'Unnamed good'}: ${quantity} × KSh ${formatAmount(unitPrice)} = KSh ${formatAmount(lineTotal)}`;
+             const total = lineTotal(good);
+             return `${good.name || 'Unnamed good'}: ${quantity} × KSh ${formatAmount(unitPrice)} = KSh ${formatAmount(total)}`;
           }).join(' | ') || '—');
           addRequestDetail(details, 'Combined total amount', `KSh ${formatAmount(requestTotal(request))}`, 'request-total');
           addRequestDetail(details, 'Notes', request.notes || '—');
