@@ -2936,6 +2936,46 @@ app.post("/api/operations/expenses", requestLimiter, requireAccountant, async (r
   }
 });
 
+app.post("/api/operations/expenses/batch", requestLimiter, requireAccountant, async (req, res) => {
+  const spentOn = typeof req.body?.spentOn === "string" ? req.body.spentOn : "";
+  const notes = applicationField(req.body?.notes || "", 500);
+  const entries = Array.isArray(req.body?.entries) ? req.body.entries.slice(0, 50) : [];
+  if (!isValidDateOnly(spentOn)) return res.status(400).json({ error: "Enter a valid expense date." });
+  if (!entries.length) return res.status(400).json({ error: "Add at least one person and expense." });
+  try {
+    const accounts = await readAccounts();
+    const accountsByEmail = new Map(accounts.map((account) => [account.email, account]));
+    const batchId = crypto.randomUUID();
+    const createdAt = new Date().toISOString();
+    const expenses = entries.map((entry) => {
+      const employeeEmail = normalizeEmail(entry?.employeeEmail);
+      const employee = employeeEmail ? accountsByEmail.get(employeeEmail) : null;
+      const manualEmployeeName = applicationField(entry?.manualEmployeeName, 160);
+      const expenseType = applicationField(entry?.expenseType, 40);
+      const otherDescription = applicationField(entry?.otherDescription, 160);
+      const amount = Number(entry?.amount);
+      if (employeeEmail && (!employee || !["agent", "fieldEmployee"].includes(employee.role))) throw new Error("An employee selected in one of the rows no longer exists.");
+      if (!employee?.fullName && !manualEmployeeName) throw new Error("Select an employee or type the person's name in every row.");
+      if (!EXPENSE_TYPES.has(expenseType)) throw new Error("Select a valid expense type in every row.");
+      if (expenseType === "Other" && !otherDescription) throw new Error("Specify every other expense.");
+      if (!Number.isFinite(amount) || amount <= 0 || amount > 10_000_000) throw new Error("Enter a valid amount in every row.");
+      return {
+        id: crypto.randomUUID(), batchId, employeeEmail: employee?.email || "", employeeName: employee?.fullName || manualEmployeeName,
+        expenseType, otherDescription: expenseType === "Other" ? otherDescription : "", amount: Math.round(amount * 100) / 100,
+        spentOn, notes, createdAt, recordedBy: req.accountant.email
+      };
+    });
+    await expensesCollection.insertMany(expenses);
+    await recordSecurityEvent(req, "expense.batch_created", { batchId }, { count: expenses.length, spentOn });
+    return res.status(201).json({ expenses, count: expenses.length });
+  } catch (error) {
+    const message = error?.message || "Unable to save these expenses.";
+    if (/^(An employee|Select an employee|Select a valid|Specify every|Enter a valid amount)/.test(message)) return res.status(400).json({ error: message });
+    console.error("Expense batch creation failed:", message);
+    return res.status(500).json({ error: "Unable to save these expenses." });
+  }
+});
+
 app.post("/api/operations/expense-report-exports", requestLimiter, requireOperationsViewer, async (req, res) => {
   try {
     await recordSecurityEvent(req, "expense_report.exported", {}, { from: req.body?.from || "", to: req.body?.to || "" });

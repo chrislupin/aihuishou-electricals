@@ -586,3 +586,16 @@ test("accountants record employee and manual expenses while administrators remai
   assert.equal(result.body.expenses.length, 2);
   assert.ok(collection("security_audit_log").records.some((event) => event.action === "expense.created"));
 });
+
+test("accountants can save multiple listed and manually named expenses together", async () => {
+  const accountant = passwordAccount("batch-accountant@example.com", "accountant-password", { role: "accountant", fullName: "Batch Accountant" });
+  const employee = passwordAccount("batch-employee@example.com", "employee-password", { role: "fieldEmployee", fullName: "Batch Employee" });
+  collection("agent_accounts").records.push(accountant, employee);
+  const accountantCookie = signedSessionCookie("accountant_session", { email: accountant.email, role: "accountant", sessionVersion: 0 });
+  const result = await request("/api/operations/expenses/batch", { method: "POST", headers: { cookie: accountantCookie, "content-type": "application/json" }, body: JSON.stringify({ spentOn: "2026-10-02", entries: [{ employeeEmail: employee.email, expenseType: "Meal", amount: 300 }, { manualEmployeeName: "Warehouse Helper", expenseType: "Other", otherDescription: "Loading", amount: 150 }] }) });
+  assert.equal(result.response.status, 201);
+  assert.equal(result.body.count, 2);
+  assert.equal(result.body.expenses[0].employeeName, "Batch Employee");
+  assert.equal(result.body.expenses[1].employeeName, "Warehouse Helper");
+  assert.ok(collection("security_audit_log").records.some((event) => event.action === "expense.batch_created"));
+});
