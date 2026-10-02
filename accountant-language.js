@@ -61,7 +61,7 @@
   }
 
   function addSwitcher() {
-    const target = document.querySelector('.header');
+    const target = document.querySelector('.side-top, .header');
     if (!target || target.querySelector('.accountant-language-switcher')) return;
     const control = document.createElement('div');
     control.className = 'accountant-language-switcher';
@@ -76,7 +76,7 @@
   }
 
   const style = document.createElement('style');
-  style.textContent = '.accountant-language-switcher{display:inline-flex;align-items:center;align-self:center;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#fff;box-shadow:0 5px 12px #14538812}.accountant-language-switcher button{min-width:40px;border:0;padding:9px 10px;background:transparent;color:var(--blue-deep);font:800 12px/1 system-ui,sans-serif;cursor:pointer}.accountant-language-switcher button.is-active{background:var(--blue-deep);color:#fff}.accountant-language-switcher button:focus-visible{outline:3px solid var(--orange);outline-offset:-3px}';
+  style.textContent = '.side-top .accountant-language-switcher{display:inline-flex;align-items:center;align-self:center;margin-left:auto;border:1px solid #ffffff36;border-radius:8px;overflow:hidden;background:#ffffff10;box-shadow:none}.accountant-language-switcher button{min-width:34px;border:0;padding:8px 8px;background:transparent;color:#dcecff;font:800 11px/1 system-ui,sans-serif;cursor:pointer;transition:background .15s ease,color .15s ease}.accountant-language-switcher button:hover{background:#ffffff18;color:#fff}.accountant-language-switcher button.is-active{background:#fff;color:var(--blue-deep)}.accountant-language-switcher button:focus-visible{outline:3px solid var(--orange);outline-offset:-3px}@media(max-width:760px){.side-top .accountant-language-switcher{margin-left:auto}.accountant-language-switcher button{min-width:30px;padding:8px 6px}}';
   document.head.append(style);
   addSwitcher();
   new MutationObserver((records) => {
