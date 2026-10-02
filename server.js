@@ -245,7 +245,7 @@ const publicPageFiles = new Set([
   "accountant-signup.html",
   "password-reset.html"
 ]);
-const publicAssetFiles = new Set(["styles.css", "script.js", "language.js"]);
+const publicAssetFiles = new Set(["styles.css", "script.js", "language.js", "accountant-language.js"]);
 const publicImageFiles = new Set([
   "company-logo.png",
   "original.avif",
@@ -2200,7 +2200,7 @@ app.get("/api/current-month-goods-summary", requirePickupUser, async (req, res) 
     const monthKey = businessDateKey().slice(0, 7);
     const totals = new Map();
     (await readPickupRequests())
-      .filter((request) => isOperationalTicket(request) && businessDateKey(ticketActivityAt(request)).slice(0, 7) === monthKey)
+      .filter((request) => request.agentEmail === req.agent.email && isOperationalTicket(request) && businessDateKey(ticketActivityAt(request)).slice(0, 7) === monthKey)
       .forEach((request) => {
         (request.goods || []).forEach((good) => {
           const name = applicationField(good?.name, 160) || "Unnamed good";
