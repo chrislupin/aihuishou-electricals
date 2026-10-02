@@ -664,3 +664,24 @@ test("administrators and accountants can view live goods totals", async () => {
   result = await request("/api/operations/goods-summary", { headers: { cookie: accountantCookie } });
   assert.equal(result.response.status, 200);
 });
+
+test("agents and field employees can view collective goods totals for the current month", async () => {
+  const recordedAt = new Date().toISOString();
+  const agent = passwordAccount("monthly-summary-agent@example.com", "agent-password", { fullName: "Monthly Summary Agent" });
+  const fieldEmployee = passwordAccount("monthly-summary-field@example.com", "field-password", { fullName: "Monthly Summary Field", role: "fieldEmployee" });
+  collection("agent_accounts").records.push(agent, fieldEmployee);
+  collection("pickup_requests").records.push(
+    { id: "monthly-summary-agent-ticket", requestType: "agentTicket", status: "Approved", createdAt: recordedAt, goods: [{ name: "Monthly Summary Good", quantity: 2, amount: 300, totalAmount: 600 }] },
+    { id: "monthly-summary-field-ticket", requestType: "fieldEmployee", status: "Pending approval", createdAt: recordedAt, goods: [{ name: "Monthly Summary Good", quantity: 3, amount: 200, totalAmount: 600 }] }
+  );
+  const agentCookie = signedSessionCookie("agent_session", { email: agent.email, role: "agent", sessionVersion: 0 });
+  const fieldCookie = signedSessionCookie("field_employee_session", { email: fieldEmployee.email, role: "fieldEmployee", sessionVersion: 0 });
+  let result = await request("/api/current-month-goods-summary", { headers: { cookie: agentCookie } });
+  assert.equal(result.response.status, 200);
+  let summary = result.body.items.find((item) => item.name === "Monthly Summary Good");
+  assert.deepEqual(summary, { name: "Monthly Summary Good", quantity: 5, amount: 1200 });
+  result = await request("/api/current-month-goods-summary", { headers: { cookie: fieldCookie } });
+  assert.equal(result.response.status, 200);
+  summary = result.body.items.find((item) => item.name === "Monthly Summary Good");
+  assert.deepEqual(summary, { name: "Monthly Summary Good", quantity: 5, amount: 1200 });
+});
