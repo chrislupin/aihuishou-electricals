@@ -85,7 +85,7 @@
           <a data-view="pickup-dates" href="admin-dashboard.html?view=pickup-dates">Pickup dates approval</a>
           <a data-view="approved-fields" href="admin-dashboard.html?view=approved-fields">Ticket Center</a>
           <a data-view="expenses" href="expenses.html">Expenses</a>
-          <a data-view="goods" href="goods.html">Goods</a>
+          <a data-view="goods" href="goods.html">Inventory</a>
           <a class="admin-only" data-view="accounts" href="admin-dashboard.html?view=accounts">Manage employees and agents</a>
           <a class="active" href="admin-analysis.html">Analysis</a>
           <a class="admin-only" href="admin-audit.html">Audit log</a>
@@ -566,5 +566,6 @@
       $('#logout').addEventListener('click', async () => { await fetch(portalRole === 'accountant' ? '/api/accountant-logout' : '/api/admin-logout', { method: 'POST' }); location.assign(portalRole === 'accountant' ? 'accountant-login.html' : 'admin-login.html'); });
       load();
     </script>
+    <script src="accountant-language.js"></script>
   </body>
 </html>
