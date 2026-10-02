@@ -2523,21 +2523,16 @@ app.get("/api/operations/goods-summary", requireOperationsViewer, async (req, re
   try {
     const requests = await readPickupRequests();
     const goods = new Map();
-    requests.forEach((request) => {
+    requests.filter((request) => request.status === "Approved" && isOperationalTicket(request)).forEach((request) => {
       (request.goods || []).forEach((item) => {
         const name = applicationField(item?.name, 160) || "Unnamed good";
         const quantity = Number(item?.quantity);
         const unitAmount = Number(item?.amount);
         const lineAmount = Number(item?.totalAmount);
-        const entry = goods.get(name) || { name, quantity: 0, amount: 0, ticketCount: 0, approvedQuantity: 0, approvedAmount: 0 };
+        const entry = goods.get(name) || { name, quantity: 0, amount: 0 };
         if (Number.isFinite(quantity)) entry.quantity += quantity;
         const amount = Number.isFinite(lineAmount) ? lineAmount : (Number.isFinite(quantity) && Number.isFinite(unitAmount) ? quantity * unitAmount : 0);
         if (Number.isFinite(amount)) entry.amount += amount;
-        entry.ticketCount += 1;
-        if (request.status === "Approved") {
-          if (Number.isFinite(quantity)) entry.approvedQuantity += quantity;
-          if (Number.isFinite(amount)) entry.approvedAmount += amount;
-        }
         goods.set(name, entry);
       });
     });

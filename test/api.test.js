@@ -646,7 +646,7 @@ test("administrators can delete every expense in a recorded batch", async () => 
   assert.ok(collection("security_audit_log").records.some((event) => event.action === "expense_batch.deleted" && event.target.batchId === batchId));
 });
 
-test("administrators and accountants can view live goods totals", async () => {
+test("administrators and accountants can view goods totals from approved tickets only", async () => {
   const accountant = passwordAccount("goods-accountant@example.com", "accountant-password", { role: "accountant" });
   collection("agent_accounts").records.push(accountant);
   collection("pickup_requests").records.push(
@@ -658,9 +658,8 @@ test("administrators and accountants can view live goods totals", async () => {
   let result = await request("/api/operations/goods-summary", { headers: { cookie: adminCookie } });
   assert.equal(result.response.status, 200);
   const lcds = result.body.items.find((item) => item.name === "Live Summary LCDs");
-  assert.equal(lcds.quantity, 3);
-  assert.equal(lcds.amount, 2350);
-  assert.equal(lcds.approvedQuantity, 2);
+  assert.deepEqual(lcds, { name: "Live Summary LCDs", quantity: 2, amount: 1600 });
+  assert.equal(result.body.items.some((item) => item.name === "Live Summary Tablets"), false);
   result = await request("/api/operations/goods-summary", { headers: { cookie: accountantCookie } });
   assert.equal(result.response.status, 200);
 });
