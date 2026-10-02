@@ -2200,7 +2200,7 @@ app.get("/api/current-month-goods-summary", requirePickupUser, async (req, res) 
     const monthKey = businessDateKey().slice(0, 7);
     const totals = new Map();
     (await readPickupRequests())
-      .filter((request) => isOperationalTicket(request) && businessDateKey(ticketReportAt(request)).slice(0, 7) === monthKey)
+      .filter((request) => isOperationalTicket(request) && businessDateKey(ticketActivityAt(request)).slice(0, 7) === monthKey)
       .forEach((request) => {
         (request.goods || []).forEach((good) => {
           const name = applicationField(good?.name, 160) || "Unnamed good";
@@ -2214,7 +2214,13 @@ app.get("/api/current-month-goods-summary", requirePickupUser, async (req, res) 
           totals.set(name, item);
         });
       });
-    return res.json({ month: monthKey, items: [...totals.values()].sort((first, second) => first.name.localeCompare(second.name)) });
+    const items = [...totals.values()].sort((first, second) => first.name.localeCompare(second.name));
+    return res.json({
+      month: monthKey,
+      totalQuantity: items.reduce((sum, item) => sum + item.quantity, 0),
+      totalAmount: items.reduce((sum, item) => sum + item.amount, 0),
+      items
+    });
   } catch (error) {
     console.error("Current-month goods summary failed:", error.message);
     return res.status(500).json({ error: "Unable to load this month's goods totals." });
