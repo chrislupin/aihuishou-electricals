@@ -1,5 +1,6 @@
 (() => {
-  if (new URLSearchParams(location.search).get('role') !== 'accountant') return;
+  const isAccountantLogin = location.pathname.endsWith('/accountant-login.html');
+  if (new URLSearchParams(location.search).get('role') !== 'accountant' && !isAccountantLogin) return;
 
   const translations = {
     'Operations workspace': '运营工作区', 'Overview & unapproved': '概览和待审批', 'Overview & approved': '概览和已审批',
@@ -21,7 +22,14 @@
     'Collection analysis': '收集分析', 'Report type': '报告类型', 'Approved tickets': '已审批工单',
     'Pending approval': '待审批', 'All time': '所有时间', 'Generate report': '生成报告', 'Clear filters': '清除筛选',
     'Search': '搜索', 'Employee / agent': '员工/代理', 'Status': '状态', 'Approved': '已审批', 'Rejected': '已拒绝',
-    'Details': '详情', 'Edit': '编辑', 'Delete': '删除', 'Cancel': '取消', 'Close': '关闭', 'Save tracked edit': '保存已跟踪编辑'
+    'Details': '详情', 'Edit': '编辑', 'Delete': '删除', 'Cancel': '取消', 'Close': '关闭', 'Save tracked edit': '保存已跟踪编辑',
+    'Operations console': '运营控制台', 'Decisions that keep collections moving.': '让收集工作持续运转的决策。',
+    'Review tickets, pickup requests and dates from one focused workspace.': '在一个专注的工作区中查看工单、取件请求和日期。',
+    'Approve operational requests with clear records and accountable history.': '使用清晰记录和可追溯历史审批运营请求。',
+    'Use the responsive workspace confidently from desktop or mobile.': '在桌面或手机上放心使用响应式工作区。',
+    'Accountant sign in': '会计登录', 'Use your approved operations account to continue.': '使用已获批准的运营账户继续。',
+    'Accountant email': '会计邮箱', 'Password': '密码', 'Open approvals': '打开审批',
+    'New accountant? Register for approval': '新会计？注册以获得批准', 'Forgot your password?': '忘记密码？', 'Signing in…': '正在登录…'
   };
   const savedText = new WeakMap();
   const savedAttributes = new WeakMap();
@@ -76,7 +84,7 @@
   }
 
   const style = document.createElement('style');
-  style.textContent = '.side-top .accountant-language-switcher{display:inline-flex;align-items:center;align-self:center;margin-left:auto;border:1px solid #ffffff36;border-radius:8px;overflow:hidden;background:#ffffff10;box-shadow:none}.accountant-language-switcher button{min-width:34px;border:0;padding:8px 8px;background:transparent;color:#dcecff;font:800 11px/1 system-ui,sans-serif;cursor:pointer;transition:background .15s ease,color .15s ease}.accountant-language-switcher button:hover{background:#ffffff18;color:#fff}.accountant-language-switcher button.is-active{background:#fff;color:var(--blue-deep)}.accountant-language-switcher button:focus-visible{outline:3px solid var(--orange);outline-offset:-3px}@media(max-width:760px){.side-top .accountant-language-switcher{margin-left:auto}.accountant-language-switcher button{min-width:30px;padding:8px 6px}}';
+  style.textContent = '.side-top .accountant-language-switcher{display:inline-flex;align-items:center;align-self:center;margin-left:auto;border:1px solid #ffffff36;border-radius:8px;overflow:hidden;background:#ffffff10;box-shadow:none}.accountant-language-switcher button{min-width:34px;border:0;padding:8px 8px;background:transparent;color:#dcecff;font:800 11px/1 system-ui,sans-serif;cursor:pointer;transition:background .15s ease,color .15s ease}.accountant-language-switcher button:hover{background:#ffffff18;color:#fff}.accountant-language-switcher button.is-active{background:#fff;color:var(--blue-deep)}.accountant-language-switcher button:focus-visible{outline:3px solid var(--orange);outline-offset:-3px}.accountant-login-page .accountant-language-switcher{display:inline-flex;align-items:center;margin-left:auto;border:1px solid #c9ddec;border-radius:9px;overflow:hidden;background:#fff;box-shadow:0 4px 12px #0d4e7d12}.accountant-login-page .accountant-language-switcher button{color:var(--blue-deep)}.accountant-login-page .accountant-language-switcher button:hover{background:#eaf4fb;color:var(--blue-deep)}@media(max-width:760px){.side-top .accountant-language-switcher{margin-left:auto}.accountant-language-switcher button{min-width:30px;padding:8px 6px}}';
   document.head.append(style);
   addSwitcher();
   new MutationObserver((records) => {
