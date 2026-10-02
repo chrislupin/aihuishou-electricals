@@ -133,6 +133,9 @@ const agentApplicationsCollection = database?.collection("agent_applications");
 const agentAccessInvitesCollection = database?.collection("agent_access_invites");
 const accountantApplicationsCollection = database?.collection("accountant_applications");
 const securityAuditLogCollection = database?.collection("security_audit_log");
+const expensesCollection = database?.collection("employee_expenses");
+const MOMBASA_AGENT_EMAIL = "gisorebarrack5@gmail.com";
+const EXPENSE_TYPES = new Set(["Meal", "Transport", "Credit/Bundle", "Other"]);
 
 const adminEmail = normalizeConfiguredEmail(process.env.ADMIN_EMAIL);
 const configuredAppUrl = normalizeAppUrl(process.env.APP_URL);
@@ -234,6 +237,7 @@ const publicPageFiles = new Set([
   "admin-login.html",
   "admin-dashboard.html",
   "admin-analysis.html",
+  "expenses.html",
   "admin-audit.html",
   "accountant-login.html",
   "accountant-signup.html",
@@ -900,7 +904,10 @@ async function ensureDatabase() {
           { unique: true, partialFilterExpression: { status: "Pending" }, name: "one_pending_accountant_application_per_email" }
         ),
         securityAuditLogCollection.createIndex({ id: 1 }, { unique: true }),
-        securityAuditLogCollection.createIndex({ createdAt: -1 })
+        securityAuditLogCollection.createIndex({ createdAt: -1 }),
+        expensesCollection.createIndex({ id: 1 }, { unique: true }),
+        expensesCollection.createIndex({ spentOn: -1 }),
+        expensesCollection.createIndex({ employeeEmail: 1, spentOn: -1 })
       ]);
     })().catch((error) => {
       databaseReady = undefined;
@@ -2468,6 +2475,20 @@ app.get(
   }
 );
 
+app.get("/api/operations/employees", requireOperationsViewer, async (req, res) => {
+  try {
+    const accounts = await readAccounts();
+    return res.json({
+      accounts: accounts
+        .filter((account) => account.role === "agent" || account.role === "fieldEmployee")
+        .map((account) => ({ email: account.email, fullName: account.fullName, role: account.role }))
+    });
+  } catch (error) {
+    console.error("Operations employee lookup failed:", error.message);
+    return res.status(500).json({ error: "Unable to load employees." });
+  }
+});
+
 app.get("/api/admin/agent-applications", requireAdmin, async (req, res) => {
   try {
     const applications = await agentApplicationsCollection.find(
@@ -2864,6 +2885,64 @@ app.post("/api/admin/accounts/:email/enable", requireAdmin, async (req, res) => 
   } catch (error) {
     console.error("Account enable failed:", error.message);
     return res.status(500).json({ error: "Unable to enable account." });
+  }
+});
+
+// Expenses are entered by accountants, while administrators retain the same
+// view-only access they have for operational approval records.
+app.get("/api/operations/expenses", requireOperationsViewer, async (req, res) => {
+  try {
+    const from = typeof req.query?.from === "string" && isValidDateOnly(req.query.from) ? req.query.from : "";
+    const to = typeof req.query?.to === "string" && isValidDateOnly(req.query.to) ? req.query.to : "";
+    const query = {};
+    if (from || to) query.spentOn = { ...(from ? { $gte: from } : {}), ...(to ? { $lte: to } : {}) };
+    const expenses = await expensesCollection.find(query, { projection: { _id: 0 } }).sort({ spentOn: -1 }).toArray();
+    return res.json({ expenses });
+  } catch (error) {
+    console.error("Expense lookup failed:", error.message);
+    return res.status(500).json({ error: "Unable to load expenses." });
+  }
+});
+
+app.post("/api/operations/expenses", requestLimiter, requireAccountant, async (req, res) => {
+  const employeeEmail = normalizeEmail(req.body?.employeeEmail);
+  const manualEmployeeName = applicationField(req.body?.manualEmployeeName, 160);
+  const expenseType = applicationField(req.body?.expenseType, 40);
+  const otherDescription = applicationField(req.body?.otherDescription, 160);
+  const amount = Number(req.body?.amount);
+  const spentOn = typeof req.body?.spentOn === "string" ? req.body.spentOn : "";
+  const notes = applicationField(req.body?.notes || "", 500);
+  if (!EXPENSE_TYPES.has(expenseType)) return res.status(400).json({ error: "Select a valid expense type." });
+  if (expenseType === "Other" && !otherDescription) return res.status(400).json({ error: "Specify the other expense." });
+  if (!Number.isFinite(amount) || amount <= 0 || amount > 10_000_000) return res.status(400).json({ error: "Enter a valid expense amount." });
+  if (!isValidDateOnly(spentOn)) return res.status(400).json({ error: "Enter a valid expense date." });
+  try {
+    const employee = employeeEmail ? await getAccountByEmail(employeeEmail) : null;
+    if (employeeEmail && (!employee || !["agent", "fieldEmployee"].includes(employee.role))) return res.status(400).json({ error: "The selected employee account no longer exists." });
+    const employeeName = employee?.fullName || manualEmployeeName;
+    if (!employeeName) return res.status(400).json({ error: "Select an employee or type the person's name." });
+    const expense = {
+      id: crypto.randomUUID(), employeeEmail: employee?.email || "", employeeName,
+      expenseType, otherDescription: expenseType === "Other" ? otherDescription : "",
+      amount: Math.round(amount * 100) / 100, spentOn, notes,
+      createdAt: new Date().toISOString(), recordedBy: req.accountant.email
+    };
+    await expensesCollection.insertOne(expense);
+    await recordSecurityEvent(req, "expense.created", { id: expense.id, employeeEmail: expense.employeeEmail }, { amount: expense.amount, expenseType: expense.expenseType, spentOn });
+    return res.status(201).json({ expense });
+  } catch (error) {
+    console.error("Expense creation failed:", error.message);
+    return res.status(500).json({ error: "Unable to save this expense." });
+  }
+});
+
+app.post("/api/operations/expense-report-exports", requestLimiter, requireOperationsViewer, async (req, res) => {
+  try {
+    await recordSecurityEvent(req, "expense_report.exported", {}, { from: req.body?.from || "", to: req.body?.to || "" });
+    return res.status(204).end();
+  } catch (error) {
+    console.error("Expense report export audit failed:", error.message);
+    return res.status(500).json({ error: "Unable to record this report export." });
   }
 });
 

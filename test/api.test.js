@@ -566,3 +566,23 @@ test("deleting an account preserves operational records and permits a new regist
   assert.ok(await collection("agent_applications").findOne({ email, status: "Pending" }));
   assert.ok(collection("security_audit_log").records.some((event) => event.action === "account.deleted" && event.target.email === email && event.metadata.reason === "Duplicate account"));
 });
+
+test("accountants record employee and manual expenses while administrators remain view-only", async () => {
+  const employee = passwordAccount("expense-employee@example.com", "employee-password", { fullName: "Expense Employee", role: "fieldEmployee" });
+  const accountant = passwordAccount("expense-accountant@example.com", "accountant-password", { fullName: "Expense Accountant", role: "accountant" });
+  const adminCookie = signedSessionCookie("admin_session", { admin: true, sessionVersion: 0 });
+  collection("agent_accounts").records.push(employee, accountant);
+  const accountantCookie = signedSessionCookie("accountant_session", { email: accountant.email, role: "accountant", sessionVersion: 0 });
+  const payload = { employeeEmail: employee.email, expenseType: "Transport", amount: 450, spentOn: "2026-10-02", notes: "Route to collection point" };
+  let result = await request("/api/operations/expenses", { method: "POST", headers: { cookie: adminCookie, "content-type": "application/json" }, body: JSON.stringify(payload) });
+  assert.equal(result.response.status, 401);
+  result = await request("/api/operations/expenses", { method: "POST", headers: { cookie: accountantCookie, "content-type": "application/json" }, body: JSON.stringify(payload) });
+  assert.equal(result.response.status, 201);
+  assert.equal(result.body.expense.employeeName, "Expense Employee");
+  result = await request("/api/operations/expenses", { method: "POST", headers: { cookie: accountantCookie, "content-type": "application/json" }, body: JSON.stringify({ manualEmployeeName: "Temporary Helper", expenseType: "Other", otherDescription: "Loading materials", amount: 250, spentOn: "2026-10-02" }) });
+  assert.equal(result.response.status, 201);
+  result = await request("/api/operations/expenses", { headers: { cookie: adminCookie } });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.expenses.length, 2);
+  assert.ok(collection("security_audit_log").records.some((event) => event.action === "expense.created"));
+});

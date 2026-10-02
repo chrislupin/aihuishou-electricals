@@ -84,6 +84,7 @@
           <a class="admin-only" data-view="applications" href="admin-dashboard.html?view=applications">Agent applications</a>
           <a data-view="pickup-dates" href="admin-dashboard.html?view=pickup-dates">Pickup dates approval</a>
           <a data-view="approved-fields" href="admin-dashboard.html?view=approved-fields">Ticket Center</a>
+          <a data-view="expenses" href="expenses.html">Expenses</a>
           <a class="admin-only" data-view="accounts" href="admin-dashboard.html?view=accounts">Manage employees and agents</a>
           <a class="active" href="admin-analysis.html">Analysis</a>
           <a class="admin-only" href="admin-audit.html">Audit log</a>
@@ -171,6 +172,8 @@
           linkParams.set('role', 'accountant');
           link.href = `admin-dashboard.html?${linkParams}`;
         });
+        const expenseLink = document.querySelector('[data-view="expenses"]');
+        if (expenseLink) expenseLink.href = 'expenses.html?role=accountant';
         document.querySelector('.eyebrow').textContent = 'Accountant analysis';
       }
 
@@ -178,7 +181,8 @@
       const formatCurrency = (value) => `KSh ${Number(value || 0).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
       const formatPickupDate = (value) => { if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return value || 'Flexible'; const date = new Date(`${value}T00:00:00`); return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat('en-KE', { dateStyle: 'medium' }).format(date); };
       const requestRole = (request) => request.requestType === 'fieldEmployee' ? 'fieldEmployee' : 'agent';
-      const roleLabel = (request) => requestRole(request) === 'fieldEmployee' ? 'Field employee' : 'Agent';
+      const isMombasaAgent = (request) => String(request.agentEmail || '').toLocaleLowerCase() === 'gisorebarrack5@gmail.com';
+      const roleLabel = (request) => isMombasaAgent(request) ? 'Mombasa Agent' : (requestRole(request) === 'fieldEmployee' ? 'Field employee' : 'Agent');
       const isTicket = (request) => request.requestType === 'fieldEmployee' || request.requestType === 'agentTicket';
       const isPickup = (request) => !isTicket(request);
       const reportDateFor = (request) => isTicket(request) && request.status === 'Approved'

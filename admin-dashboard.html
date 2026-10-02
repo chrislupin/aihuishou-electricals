@@ -97,6 +97,7 @@
           <a class="admin-only" data-view="applications" href="admin-dashboard.html?view=applications">Agent applications</a>
           <a data-view="pickup-dates" href="admin-dashboard.html?view=pickup-dates">Pickup dates approval</a>
           <a data-view="approved-fields" href="admin-dashboard.html?view=approved-fields">Ticket Center</a>
+          <a data-view="expenses" href="expenses.html">Expenses</a>
           <a class="admin-only" data-view="accounts" href="admin-dashboard.html?view=accounts">Manage accounts</a>
           <a data-view="analysis" href="admin-analysis.html">Analysis</a>
           <a class="admin-only" href="admin-audit.html">Audit log</a>
@@ -143,6 +144,10 @@
         document.querySelectorAll('.admin-only').forEach((element) => element.remove());
         document.querySelector('[data-view="overview"]').textContent = 'Overview & approved';
         document.querySelectorAll('.nav a[data-view]').forEach((link) => {
+          if (link.dataset.view === 'expenses') {
+            link.href = 'expenses.html?role=accountant';
+            return;
+          }
           if (link.dataset.view === 'analysis') {
             link.href = 'admin-analysis.html?role=accountant';
             return;
