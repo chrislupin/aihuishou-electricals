@@ -461,22 +461,6 @@ test("ticket history keeps older rejected tickets actionable and report filters 
   assert.deepEqual(result.body.requests.map((item) => item.id), ["resubmitted-ticket"]);
 });
 
-test("report filters accept multiple selected employees", async () => {
-  const first = passwordAccount("report-first@example.com", "report-password", { fullName: "First Reporter" });
-  const second = passwordAccount("report-second@example.com", "report-password", { fullName: "Second Reporter" });
-  const excluded = passwordAccount("report-excluded@example.com", "report-password", { fullName: "Excluded Reporter" });
-  collection("agent_accounts").records.push(first, second, excluded);
-  collection("pickup_requests").records.push(
-    { id: "report-first-ticket", agentEmail: first.email, requestType: "agentTicket", status: "Approved", goods: [], createdAt: new Date().toISOString() },
-    { id: "report-second-ticket", agentEmail: second.email, requestType: "agentTicket", status: "Approved", goods: [], createdAt: new Date().toISOString() },
-    { id: "report-excluded-ticket", agentEmail: excluded.email, requestType: "agentTicket", status: "Approved", goods: [], createdAt: new Date().toISOString() }
-  );
-  const adminCookie = signedSessionCookie("admin_session", { admin: true, sessionVersion: 0 });
-  const result = await request(`/api/admin/pickup-requests?reportType=tickets&status=Approved&person=${encodeURIComponent(first.email)}&person=${encodeURIComponent(second.email)}`, { headers: { cookie: adminCookie } });
-  assert.equal(result.response.status, 200);
-  assert.deepEqual(new Set(result.body.requests.map((item) => item.id)), new Set(["report-first-ticket", "report-second-ticket"]));
-});
-
 test("administrators and accountants can delete finalized tickets", async () => {
   const adminCookie = await login("/api/admin-login", "admin@example.com", "admin-password", "admin_session");
   collection("agent_accounts").records.push(passwordAccount("delete-accountant@example.com", "accountant-password", { role: "accountant" }));

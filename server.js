@@ -2498,9 +2498,7 @@ app.get(
       const reportType = typeof req.query?.reportType === "string" ? req.query.reportType : "";
       const status = typeof req.query?.status === "string" ? req.query.status : "";
       const role = typeof req.query?.role === "string" ? req.query.role : "";
-      const people = (Array.isArray(req.query?.person) ? req.query.person : [req.query?.person])
-        .map(normalizeEmail)
-        .filter(Boolean);
+      const person = normalizeEmail(req.query?.person);
       const filteredRequests = adminRequests.filter((request) => {
         const ticket = request.requestType === "fieldEmployee" || request.requestType === "agentTicket";
         if (reportType === "tickets" && !ticket) return false;
@@ -2508,7 +2506,7 @@ app.get(
         if (status && request.status !== status) return false;
         if (role === "agent" && request.requestType === "fieldEmployee") return false;
         if (role === "fieldEmployee" && request.requestType !== "fieldEmployee") return false;
-        if (people.length && !people.includes(normalizeEmail(request.agentEmail))) return false;
+        if (person && normalizeEmail(request.agentEmail) !== person) return false;
         return matchesAdminReportDate(ticketReportAt(request), range, from, to);
       });
 
