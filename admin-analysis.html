@@ -39,8 +39,6 @@
       .filter { display: grid; gap: 6px; }
       .filter label { color: var(--blue-deep); font-size: 12px; font-weight: 800; }
       .filter input, .filter select { width: 100%; min-height: 40px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: #f8fcff; font: inherit; }
-      .filter select[multiple] { min-height: 132px; padding: 5px; }
-      .filter-hint { color: var(--muted); font-size: 11px; font-weight: 500; line-height: 1.25; }
       .filter-wide { grid-column: span 2; }
       .filter-actions { display: flex; align-items: end; }
       .filter-actions .btn { width: 100%; min-height: 40px; }
@@ -113,9 +111,8 @@
             <input id="search" type="search" placeholder="Employee, email, good, location or note" />
           </div>
           <div class="filter">
-            <label for="person">Employees / agents</label>
-            <select id="person" multiple aria-describedby="personHint"></select>
-            <small class="filter-hint" id="personHint">Select one or more people. Leave empty for everyone.</small>
+            <label for="person">Employee / agent</label>
+            <select id="person"><option value="">All people</option></select>
           </div>
           <div class="filter">
             <label for="role">Role</label>
@@ -213,7 +210,6 @@
       const requestQuantity = (request) => (request.goods || []).reduce((total, good) => total + (Number(good.quantity) || 0), 0);
       const personName = (request) => request.agent?.fullName || request.agentEmail || 'Unknown person';
       const personKey = (request) => request.agentEmail || `${personName(request)}|${roleLabel(request)}`;
-      const selectedPeople = () => [...controls.person.selectedOptions].map((option) => option.value).filter(Boolean);
       const preferredDate = (request) => formatPickupDate(request.preferredDate || request.preferredTime);
 
       function startOfWeek(value) {
@@ -233,8 +229,7 @@
         return requests.filter((request) => {
           if (controls.reportType.value === 'tickets' && (!isTicket(request) || request.status !== 'Approved')) return false;
           if (controls.reportType.value === 'pickups' && !isPickup(request)) return false;
-          const people = selectedPeople();
-          if (people.length && !people.includes(request.agentEmail)) return false;
+          if (controls.person.value && request.agentEmail !== controls.person.value) return false;
           if (controls.role.value && requestRole(request) !== controls.role.value) return false;
           if (controls.status.value && request.status !== controls.status.value) return false;
           if (!isInDateRange(request)) return false;
@@ -509,7 +504,7 @@
       function clearFilters() {
         controls.reportType.value = 'tickets';
         controls.search.value = '';
-        [...controls.person.options].forEach((option) => { option.selected = false; });
+        controls.person.value = '';
         controls.role.value = '';
         controls.status.value = '';
         controls.range.value = 'all';
@@ -525,7 +520,7 @@
           reportType: controls.reportType.value,
           range: controls.range.value
         });
-        selectedPeople().forEach((person) => params.append('person', person));
+        if (controls.person.value) params.set('person', controls.person.value);
         if (controls.role.value) params.set('role', controls.role.value);
         if (controls.status.value) params.set('status', controls.status.value);
         if (controls.from.value) params.set('from', controls.from.value);
