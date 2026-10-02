@@ -3055,6 +3055,29 @@ app.get("/api/operations/expenses/:id/revisions", requireOperationsViewer, async
   }
 });
 
+app.delete("/api/operations/expense-batches/:batchId", requireAdmin, async (req, res) => {
+  const reason = applicationField(req.body?.reason, 500);
+  if (!reason) return res.status(400).json({ error: "A deletion reason is required." });
+  try {
+    let expenses = await expensesCollection.find({ batchId: req.params.batchId }, { projection: { _id: 0 } }).toArray();
+    // Expenses recorded before batch support are displayed as a one-entry
+    // batch, keyed by their own ID.
+    if (!expenses.length) {
+      const legacy = withoutMongoId(await expensesCollection.findOne({ id: req.params.batchId }));
+      expenses = legacy ? [legacy] : [];
+    }
+    if (!expenses.length) return res.status(404).json({ error: "Expense batch not found." });
+    const ids = expenses.map((expense) => expense.id);
+    const result = await expensesCollection.deleteMany({ id: { $in: ids } });
+    if (result.deletedCount !== ids.length) return res.status(409).json({ error: "This expense batch changed before it could be deleted. Refresh and try again." });
+    await recordSecurityEvent(req, "expense_batch.deleted", { batchId: req.params.batchId }, { reason, count: ids.length, expenseIds: ids });
+    return res.json({ message: "Expense batch deleted.", count: ids.length });
+  } catch (error) {
+    console.error("Expense batch deletion failed:", error.message);
+    return res.status(500).json({ error: "Unable to delete this expense batch." });
+  }
+});
+
 app.delete("/api/operations/expenses/:id", requireAdmin, async (req, res) => {
   const reason = applicationField(req.body?.reason, 500);
   if (!reason) return res.status(400).json({ error: "A deletion reason is required." });

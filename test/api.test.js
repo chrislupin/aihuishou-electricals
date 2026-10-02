@@ -632,6 +632,20 @@ test("only administrators can delete expenses and the deletion is audited", asyn
   assert.ok(collection("security_audit_log").records.some((event) => event.action === "expense.deleted" && event.metadata.reason === "Duplicate entry"));
 });
 
+test("administrators can delete every expense in a recorded batch", async () => {
+  const batchId = "delete-batch";
+  collection("employee_expenses").records.push(
+    { id: "delete-batch-one", batchId, employeeName: "First", expenseType: "Meal", amount: 200, spentOn: "2026-10-02" },
+    { id: "delete-batch-two", batchId, employeeName: "Second", expenseType: "Transport", amount: 250, spentOn: "2026-10-02" }
+  );
+  const adminCookie = signedSessionCookie("admin_session", { admin: true, sessionVersion: 0 });
+  const result = await request(`/api/operations/expense-batches/${batchId}`, { method: "DELETE", headers: { cookie: adminCookie, "content-type": "application/json" }, body: JSON.stringify({ reason: "Test batch cleanup" }) });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.count, 2);
+  assert.equal(await collection("employee_expenses").findOne({ id: "delete-batch-one" }), null);
+  assert.ok(collection("security_audit_log").records.some((event) => event.action === "expense_batch.deleted" && event.target.batchId === batchId));
+});
+
 test("administrators and accountants can view live goods totals", async () => {
   const accountant = passwordAccount("goods-accountant@example.com", "accountant-password", { role: "accountant" });
   collection("agent_accounts").records.push(accountant);
