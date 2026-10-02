@@ -599,3 +599,20 @@ test("accountants can save multiple listed and manually named expenses together"
   assert.equal(result.body.expenses[1].employeeName, "Warehouse Helper");
   assert.ok(collection("security_audit_log").records.some((event) => event.action === "expense.batch_created"));
 });
+
+test("accountants can edit an expense and its original details remain in a tracked revision", async () => {
+  const accountant = passwordAccount("expense-editor@example.com", "accountant-password", { role: "accountant", fullName: "Expense Editor" });
+  const employee = passwordAccount("expense-edit-person@example.com", "employee-password", { role: "agent", fullName: "Expense Edit Person" });
+  collection("agent_accounts").records.push(accountant, employee);
+  collection("employee_expenses").records.push({ id: "editable-expense", employeeEmail: employee.email, employeeName: employee.fullName, expenseType: "Meal", otherDescription: "", amount: 120, spentOn: "2026-10-01", notes: "Lunch", createdAt: "2026-10-01T08:00:00.000Z", recordedBy: accountant.email });
+  const accountantCookie = signedSessionCookie("accountant_session", { email: accountant.email, role: "accountant", sessionVersion: 0 });
+  let result = await request("/api/operations/expenses/editable-expense", { method: "PUT", headers: { cookie: accountantCookie, "content-type": "application/json" }, body: JSON.stringify({ employeeEmail: employee.email, expenseType: "Transport", amount: 250, spentOn: "2026-10-02", notes: "Travel" }) });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.expense.expenseType, "Transport");
+  assert.equal(result.body.expense.revisionCount, 1);
+  result = await request("/api/operations/expenses/editable-expense/revisions", { headers: { cookie: accountantCookie } });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.revisions.length, 1);
+  assert.equal(result.body.revisions[0].before.expenseType, "Meal");
+  assert.equal(result.body.revisions[0].changes.amount, 250);
+});

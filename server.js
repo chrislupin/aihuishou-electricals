@@ -134,6 +134,7 @@ const agentAccessInvitesCollection = database?.collection("agent_access_invites"
 const accountantApplicationsCollection = database?.collection("accountant_applications");
 const securityAuditLogCollection = database?.collection("security_audit_log");
 const expensesCollection = database?.collection("employee_expenses");
+const expenseRevisionsCollection = database?.collection("employee_expense_revisions");
 const MOMBASA_AGENT_EMAIL = "gisorebarrack5@gmail.com";
 const EXPENSE_TYPES = new Set(["Meal", "Transport", "Credit/Bundle", "Other"]);
 
@@ -907,7 +908,9 @@ async function ensureDatabase() {
         securityAuditLogCollection.createIndex({ createdAt: -1 }),
         expensesCollection.createIndex({ id: 1 }, { unique: true }),
         expensesCollection.createIndex({ spentOn: -1 }),
-        expensesCollection.createIndex({ employeeEmail: 1, spentOn: -1 })
+        expensesCollection.createIndex({ employeeEmail: 1, spentOn: -1 }),
+        expenseRevisionsCollection.createIndex({ id: 1 }, { unique: true }),
+        expenseRevisionsCollection.createIndex({ expenseId: 1, createdAt: -1 })
       ]);
     })().catch((error) => {
       databaseReady = undefined;
@@ -2973,6 +2976,51 @@ app.post("/api/operations/expenses/batch", requestLimiter, requireAccountant, as
     if (/^(An employee|Select an employee|Select a valid|Specify every|Enter a valid amount)/.test(message)) return res.status(400).json({ error: message });
     console.error("Expense batch creation failed:", message);
     return res.status(500).json({ error: "Unable to save these expenses." });
+  }
+});
+
+app.put("/api/operations/expenses/:id", requestLimiter, requireAccountant, async (req, res) => {
+  const employeeEmail = normalizeEmail(req.body?.employeeEmail);
+  const manualEmployeeName = applicationField(req.body?.manualEmployeeName, 160);
+  const expenseType = applicationField(req.body?.expenseType, 40);
+  const otherDescription = applicationField(req.body?.otherDescription, 160);
+  const amount = Number(req.body?.amount);
+  const spentOn = typeof req.body?.spentOn === "string" ? req.body.spentOn : "";
+  const notes = applicationField(req.body?.notes || "", 500);
+  if (!EXPENSE_TYPES.has(expenseType)) return res.status(400).json({ error: "Select a valid expense type." });
+  if (expenseType === "Other" && !otherDescription) return res.status(400).json({ error: "Specify the other expense." });
+  if (!Number.isFinite(amount) || amount <= 0 || amount > 10_000_000) return res.status(400).json({ error: "Enter a valid expense amount." });
+  if (!isValidDateOnly(spentOn)) return res.status(400).json({ error: "Enter a valid expense date." });
+  try {
+    const current = withoutMongoId(await expensesCollection.findOne({ id: req.params.id }));
+    if (!current) return res.status(404).json({ error: "Expense record not found." });
+    const employee = employeeEmail ? await getAccountByEmail(employeeEmail) : null;
+    if (employeeEmail && (!employee || !["agent", "fieldEmployee"].includes(employee.role))) return res.status(400).json({ error: "The selected Employee / Agent no longer exists." });
+    const employeeName = employee?.fullName || manualEmployeeName;
+    if (!employeeName) return res.status(400).json({ error: "Select an Employee / Agent or type a person's name." });
+    const next = { employeeEmail: employee?.email || "", employeeName, expenseType, otherDescription: expenseType === "Other" ? otherDescription : "", amount: Math.round(amount * 100) / 100, spentOn, notes };
+    const changed = Object.fromEntries(Object.entries(next).filter(([key, value]) => String(current[key] ?? "") !== String(value ?? "")));
+    if (!Object.keys(changed).length) return res.json({ expense: current, unchanged: true });
+    const editedAt = new Date().toISOString();
+    const revision = { id: crypto.randomUUID(), expenseId: current.id, createdAt: editedAt, editedBy: req.accountant.email, before: current, changes: changed };
+    await expenseRevisionsCollection.insertOne(revision);
+    await expensesCollection.updateOne({ id: current.id }, { $set: { ...next, editedAt, editedBy: req.accountant.email, revisionCount: (Number(current.revisionCount) || 0) + 1 } });
+    const expense = withoutMongoId(await expensesCollection.findOne({ id: current.id }));
+    await recordSecurityEvent(req, "expense.edited", { id: current.id, employeeEmail: expense.employeeEmail }, { changedFields: Object.keys(changed) });
+    return res.json({ expense });
+  } catch (error) {
+    console.error("Expense edit failed:", error.message);
+    return res.status(500).json({ error: "Unable to update this expense." });
+  }
+});
+
+app.get("/api/operations/expenses/:id/revisions", requireOperationsViewer, async (req, res) => {
+  try {
+    const revisions = await expenseRevisionsCollection.find({ expenseId: req.params.id }, { projection: { _id: 0 } }).sort({ createdAt: -1 }).toArray();
+    return res.json({ revisions });
+  } catch (error) {
+    console.error("Expense revision lookup failed:", error.message);
+    return res.status(500).json({ error: "Unable to load expense change history." });
   }
 });
 
