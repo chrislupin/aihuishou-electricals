@@ -212,15 +212,36 @@
       const personKey = (request) => request.agentEmail || `${personName(request)}|${roleLabel(request)}`;
       const preferredDate = (request) => formatPickupDate(request.preferredDate || request.preferredTime);
 
-      function startOfWeek(value) {
+      function reportDateKey(value) {
         const date = new Date(value);
-        date.setHours(0, 0, 0, 0);
-        const day = date.getDay();
-        date.setDate(date.getDate() - (day === 0 ? 6 : day - 1));
-        return date;
+        if (Number.isNaN(date.getTime())) return '';
+        const parts = new Intl.DateTimeFormat('en-CA', {
+          timeZone: 'Africa/Nairobi', year: 'numeric', month: '2-digit', day: '2-digit'
+        }).formatToParts(date);
+        const part = (type) => parts.find((entry) => entry.type === type)?.value || '';
+        return `${part('year')}-${part('month')}-${part('day')}`;
+      }
+
+      function weekStartKey(dateKey) {
+        const date = new Date(`${dateKey}T00:00:00Z`);
+        if (Number.isNaN(date.getTime())) return '';
+        date.setUTCDate(date.getUTCDate() - ((date.getUTCDay() + 6) % 7));
+        return date.toISOString().slice(0, 10);
       }
 
       function isInDateRange(request) {
+        const dateKey = reportDateKey(reportDateFor(request));
+        const todayKey = reportDateKey(new Date());
+        if (!dateKey || !todayKey) return false;
+
+        if (controls.range.value === 'daily') return dateKey === todayKey;
+        if (controls.range.value === 'weekly') return dateKey >= weekStartKey(todayKey) && dateKey <= todayKey;
+        if (controls.range.value === 'monthly') return dateKey.slice(0, 7) === todayKey.slice(0, 7);
+        if (controls.range.value === 'yearly') return dateKey.slice(0, 4) === todayKey.slice(0, 4);
+        if (controls.range.value === 'custom') {
+          return (!controls.from.value || dateKey >= controls.from.value)
+            && (!controls.to.value || dateKey <= controls.to.value);
+        }
         return true;
       }
 
