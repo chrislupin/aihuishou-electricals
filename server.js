@@ -87,9 +87,11 @@ const ACCOUNT_GOODS_PRICES = Object.freeze({
   })
 });
 const PRICE_OVERRIDE_AGENT_EMAIL = "lukusaalain483@gmail.com";
+const MOMBASA_AGENT_EMAIL = "gisorebarrack5@gmail.com";
 const TICKET_SUBMISSION_CUTOFF_EXEMPT_EMAILS = new Set([
   "lukusaalain483@gmail.com",
-  "bhativicent@gmail.com"
+  "bhativicent@gmail.com",
+  MOMBASA_AGENT_EMAIL
 ]);
 function canSetGoodsPrices(agent) {
   return normalizeEmail(agent?.email) === PRICE_OVERRIDE_AGENT_EMAIL;
@@ -135,7 +137,6 @@ const accountantApplicationsCollection = database?.collection("accountant_applic
 const securityAuditLogCollection = database?.collection("security_audit_log");
 const expensesCollection = database?.collection("employee_expenses");
 const expenseRevisionsCollection = database?.collection("employee_expense_revisions");
-const MOMBASA_AGENT_EMAIL = "gisorebarrack5@gmail.com";
 const EXPENSE_TYPES = new Set(["Meal", "Transport", "Credit/Bundle", "Other"]);
 
 const adminEmail = normalizeConfiguredEmail(process.env.ADMIN_EMAIL);
