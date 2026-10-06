@@ -230,14 +230,12 @@ test("ticket submissions use the Nairobi weekday and Saturday cutoffs", async ()
   const agent = passwordAccount("cutoff-agent@example.com", "agent-password");
   const cutoffExemptAgent = passwordAccount("lukusaalain483@gmail.com", "exempt-agent-password");
   const secondCutoffExemptAgent = passwordAccount("bhativicent@gmail.com", "second-exempt-agent-password");
-  const thirdCutoffExemptAgent = passwordAccount("abutibritney3@gmail.com", "third-exempt-agent-password");
   const mombasaAgent = passwordAccount("gisorebarrack5@gmail.com", "mombasa-agent-password");
   const field = passwordAccount("cutoff-field@example.com", "field-password", { role: "fieldEmployee" });
-  collection("agent_accounts").records.push(agent, cutoffExemptAgent, secondCutoffExemptAgent, thirdCutoffExemptAgent, mombasaAgent, field);
+  collection("agent_accounts").records.push(agent, cutoffExemptAgent, secondCutoffExemptAgent, mombasaAgent, field);
   const agentCookie = signedSessionCookie("agent_session", { email: agent.email, role: "agent", sessionVersion: 0 });
   const cutoffExemptAgentCookie = signedSessionCookie("agent_session", { email: cutoffExemptAgent.email, role: "agent", sessionVersion: 0 });
   const secondCutoffExemptAgentCookie = signedSessionCookie("agent_session", { email: secondCutoffExemptAgent.email, role: "agent", sessionVersion: 0 });
-  const thirdCutoffExemptAgentCookie = signedSessionCookie("agent_session", { email: thirdCutoffExemptAgent.email, role: "agent", sessionVersion: 0 });
   const mombasaAgentCookie = signedSessionCookie("agent_session", { email: mombasaAgent.email, role: "agent", sessionVersion: 0 });
   const fieldCookie = signedSessionCookie("field_employee_session", { email: field.email, role: "fieldEmployee", sessionVersion: 0 });
   const agentTicket = { requestType: "agentTicket", goods: [{ name: "LCDs", quantity: 1, amount: 1 }], notes: "Cutoff test.", idempotencyKey: "agent-cutoff-weekday" };
@@ -252,9 +250,6 @@ test("ticket submissions use the Nairobi weekday and Saturday cutoffs", async ()
   assert.equal(result.response.status, 201);
 
   result = await request("/api/pickup-requests", { method: "POST", headers: { cookie: secondCutoffExemptAgentCookie, "content-type": "application/json" }, body: JSON.stringify({ ...agentTicket, idempotencyKey: "second-cutoff-exempt-agent" }) });
-  assert.equal(result.response.status, 201);
-
-  result = await request("/api/pickup-requests", { method: "POST", headers: { cookie: thirdCutoffExemptAgentCookie, "content-type": "application/json" }, body: JSON.stringify({ ...agentTicket, idempotencyKey: "third-cutoff-exempt-agent" }) });
   assert.equal(result.response.status, 201);
 
   result = await request("/api/pickup-requests", { method: "POST", headers: { cookie: mombasaAgentCookie, "content-type": "application/json" }, body: JSON.stringify({ ...agentTicket, idempotencyKey: "mombasa-cutoff-exempt-agent" }) });
