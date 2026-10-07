@@ -49,14 +49,14 @@ const GOODS_PRICES = Object.freeze({
 const GOODS_OPTIONS = new Set([...Object.keys(GOODS_PRICES), 'RAMS']);
 const ACCOUNT_GOODS_PRICES = Object.freeze({
   "gisorebarrack5@gmail.com": Object.freeze({
-    "256GB": 1700,
+    "256GB": 1800,
     "128GB": 1500,
-    "64GB": 800,
-    "32GB": 450,
+    "64GB": 1000,
+    "32GB": 500,
     "512GB": 1900,
     "16GB": 200,
     "8GB": 100,
-    "4GB": 50,
+    "4GB": 40,
     "BIGSMART": 40,
     "IPHONE": 100,
     "TABLET": 40,
