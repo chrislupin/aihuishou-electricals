@@ -470,7 +470,7 @@
       }
 
       function renderFiltersAndRequests() {
-        root.innerHTML = '<section class="filters"><label>Person <select id="person"><option value="">All employees and agents</option></select></label><label>Status <select id="status"><option value="all">All statuses</option><option value="Pending approval">Pending approval</option><option value="Approved">Approved</option><option value="Rejected">Rejected</option></select></label><label>From <input id="requestFrom" type="date" /></label><label>To <input id="requestTo" type="date" /></label></section>' + (viewName === 'overview' ? '<h2>Aggregate ticket summary</h2><p class="muted">This table combines all tickets matching the filters for each person. It is not an individual-order view; use the ticket list to inspect a specific ticket and its ID.</p><div id="summary"></div><h2>Unapproved agent tickets</h2><div id="agents"></div><h2>Unapproved field employee tickets</h2><div id="fields"></div>' : '<p class="muted">All agent and field employee tickets are shown. Use the filters to narrow the list.</p><div id="results"></div>');
+        root.innerHTML = '<section class="filters"><label>Person <select id="person"><option value="">All employees and agents</option></select></label><label>Status <select id="status"><option value="all">All statuses</option><option value="Pending approval">Pending approval</option><option value="Approved">Approved</option><option value="Rejected">Rejected</option></select></label><label>From <input id="requestFrom" type="date" /></label><label>To <input id="requestTo" type="date" /></label></section>' + (viewName === 'overview' ? '<h2>Aggregate ticket summary</h2><p class="muted">This table combines approved tickets matching the filters for each person. It is not an individual-order view; use the ticket list to inspect a specific ticket and its ID.</p><div id="summary"></div><h2>Unapproved agent tickets</h2><div id="agents"></div><h2>Unapproved field employee tickets</h2><div id="fields"></div>' : '<p class="muted">All agent and field employee tickets are shown. Use the filters to narrow the list.</p><div id="results"></div>');
         const personSelect = $('#person');
         accounts.forEach((account) => personSelect.add(new Option(`${account.fullName} — ${account.role === 'fieldEmployee' ? 'Field employee' : 'Agent'}`, account.email)));
         const statusSelect = $('#status');
@@ -480,7 +480,7 @@
           let selected = requests.filter((request) => (!personSelect.value || request.agentEmail === personSelect.value) && (statusSelect.value === 'all' || request.status === statusSelect.value) && isWithinDateRange(request, fromInput.value, toInput.value));
           if (viewName === 'overview') {
             const tickets = selected.filter((request) => !isPickupRequest(request));
-            renderSummary(tickets);
+            renderSummary(tickets.filter((request) => request.status === 'Approved'));
             const pendingTickets = tickets.filter((request) => request.status !== 'Approved');
             listRequests($('#agents'), pendingTickets.filter(isAgentTicket), 'No unapproved agent tickets match these filters.');
             listRequests($('#fields'), pendingTickets.filter(isField), 'No unapproved field employee tickets match these filters.');
