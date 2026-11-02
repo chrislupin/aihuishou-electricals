@@ -3,5 +3,7 @@
 !.env.example
 node_modules/
 data/
+output/
+tmp/
 
 .vercel

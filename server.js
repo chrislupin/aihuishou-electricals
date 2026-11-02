@@ -92,6 +92,7 @@ const TICKET_SUBMISSION_CUTOFF_EXEMPT_EMAILS = new Set([
   "lukusaalain483@gmail.com",
   "bhativicent@gmail.com",
   "efofobolo@gmail.com",
+  "yvonnekathure98@gmail.com",
   MOMBASA_AGENT_EMAIL
 ]);
 function canSetGoodsPrices(agent) {
