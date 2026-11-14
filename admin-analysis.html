@@ -82,7 +82,6 @@
         <nav class="nav" id="operationsNav" aria-label="Operations navigation">
           <a data-view="overview" href="admin-dashboard.html">Overview &amp; unapproved</a>
           <a class="admin-only" data-view="applications" href="admin-dashboard.html?view=applications">Agent applications</a>
-          <a data-view="pickup-dates" href="admin-dashboard.html?view=pickup-dates">Pickup dates approval</a>
           <a data-view="approved-fields" href="admin-dashboard.html?view=approved-fields">Ticket Center</a>
           <a data-view="expenses" href="expenses.html">Expenses</a>
           <a data-view="goods" href="goods.html">Inventory</a>
@@ -97,14 +96,14 @@
           <div>
             <p class="eyebrow">Operations analysis</p>
             <h1>Collection report</h1>
-            <p class="muted">Switch between approved tickets and pickup requests, then review quantities and values at a glance.</p>
+            <p class="muted">Review approved agent and field employee tickets, quantities and values at a glance.</p>
           </div>
         </header>
 
         <section class="filters" aria-label="Collection report filters">
           <div class="filter">
             <label for="reportType">Report type</label>
-            <select id="reportType"><option value="tickets">Tickets</option><option value="pickups">Pickup requests</option></select>
+            <select id="reportType"><option value="tickets">Tickets</option></select>
           </div>
           <div class="filter filter-wide">
             <label for="search">Search</label>

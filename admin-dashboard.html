@@ -100,10 +100,10 @@
         <nav class="nav" id="operationsNav" aria-label="Operations navigation">
           <a data-view="overview" href="admin-dashboard.html">Overview &amp; unapproved</a>
           <a class="admin-only" data-view="applications" href="admin-dashboard.html?view=applications">Agent applications</a>
-          <a data-view="pickup-dates" href="admin-dashboard.html?view=pickup-dates">Pickup dates approval</a>
           <a data-view="approved-fields" href="admin-dashboard.html?view=approved-fields">Ticket Center</a>
           <a data-view="expenses" href="expenses.html">Expenses</a>
           <a data-view="goods" href="goods.html">Inventory</a>
+          <a class="admin-only" data-view="products" href="admin-dashboard.html?view=products">Product prices</a>
           <a class="admin-only" data-view="accounts" href="admin-dashboard.html?view=accounts">Manage accounts</a>
           <a data-view="analysis" href="admin-analysis.html">Analysis</a>
           <a class="admin-only" href="admin-audit.html">Audit log</a>
@@ -131,18 +131,18 @@
       const params = new URLSearchParams(location.search);
       const portalRole = params.get('role') === 'accountant' ? 'accountant' : 'admin';
       const canApprove = portalRole === 'accountant';
-      const viewName = params.get('view') || 'overview';
-      if (portalRole === 'accountant' && !['overview', 'pickup-dates', 'approved-fields'].includes(viewName)) location.replace('admin-dashboard.html?role=accountant');
+      const requestedView = params.get('view') || 'overview';
+      const viewName = requestedView === 'pickup-dates' ? 'overview' : requestedView;
+      if (portalRole === 'accountant' && !['overview', 'approved-fields'].includes(viewName)) location.replace('admin-dashboard.html?role=accountant');
       const root = $('#view');
       const titles = {
         overview: 'Overview & approvals',
         applications: 'Agent applications',
-        'pickup-dates': 'Pickup dates approval',
         'approved-fields': 'Ticket Center',
+        products: 'Product prices',
         accounts: 'Manage employees and agents'
       };
       let requests = [];
-      let pickupDateRequests = [];
       let accounts = [];
       let applications = [];
       let accountantApplications = [];
@@ -191,7 +191,7 @@
         ? (request.approvedAt || request.updatedAt || request.resubmittedAt || request.createdAt)
         : (request.resubmittedAt || request.createdAt);
       const roleName = (request) => isField(request) ? 'Field employee' : 'Agent';
-      const requestName = (request) => isField(request) ? 'Field employee ticket' : isAgentTicket(request) ? 'Agent ticket' : 'Pickup request';
+      const requestName = (request) => isField(request) ? 'Field employee ticket' : 'Agent ticket';
       const formatDate = (value) => new Intl.DateTimeFormat('en-KE', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
       const formatPickupDate = (value) => { if (!value) return 'Flexible / not provided'; const date = new Date(`${value}T00:00:00`); return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(date.getTime()) ? new Intl.DateTimeFormat('en-KE', { dateStyle: 'medium' }).format(date) : value; };
       const formatAmount = (amount) => Number(amount || 0).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -508,15 +508,9 @@
         draw();
       }
 
-      function renderAccounts() {
-        root.innerHTML = '<p class="muted">Create and manage agent, field employee and accountant accounts. Deleting an account permanently removes its login access; existing request records are retained.</p><section class="card"><h2>Product prices</h2><p class="muted">These prices appear in agent and field-employee dashboards. Save a product as inactive to hide it from new tickets.</p><form id="addProduct"><div class="filters"><label>New product <input name="name" required maxlength="80" /></label><label>Price <input name="price" type="number" min="0" step="0.01" required /></label><button class="btn" type="submit">Add product</button></div><p class="muted" id="productStatus"></p></form><div id="products"></div></section><section class="card"><h2>Create accountant account</h2><form id="createAccountant"><div class="filters"><label>Full name <input name="fullName" required maxlength="160" /></label><label>Email <input name="email" type="email" required /></label><label>Temporary password <input name="password" type="password" minlength="8" required /></label><button class="btn" type="submit">Create accountant</button></div><p class="muted" id="accountantCreateStatus"></p></form></section><section><h2>Accountant registration requests</h2><div id="accountantApplications"></div></section><section><h2>Accounts</h2><div id="accounts"></div></section>';
-        document.getElementById('createAccountant').addEventListener('submit', async (event) => {
-          event.preventDefault(); const form = event.currentTarget; const status = $('#accountantCreateStatus'); const button = form.querySelector('button'); button.disabled = true; status.textContent = 'Creating accountant account…';
-          try { const response = await fetch('/api/admin/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...Object.fromEntries(new FormData(form).entries()), role: 'accountant' }) }); const result = await response.json().catch(() => ({})); if (!response.ok) throw new Error(result.error || 'Unable to create accountant account.'); form.reset(); status.textContent = 'Accountant account created.'; load(); }
-          catch (error) { status.textContent = error.message || 'Unable to create accountant account.'; }
-          finally { button.disabled = false; }
-        });
-        const productTarget = $('#products');
+      function renderProducts() {
+        root.innerHTML = '<p class="muted">Manage standard catalogue prices and Mombasa-only prices separately. Inactive products are hidden from new tickets.</p><section class="card"><h2>Add product</h2><form id="addProduct"><div class="filters"><label>Product name <input name="name" required maxlength="80" /></label><label>Standard price <input name="price" type="number" min="0" step="0.01" required /></label><button class="btn" type="submit">Add product</button></div></form><p class="muted" id="productStatus" role="status"></p></section><section class="card"><h2>Standard price list</h2><p class="muted">These prices apply to all agents except Mombasa where a specific price is set below.</p><div id="standardProducts"></div></section><section class="card"><h2>Mombasa price list</h2><p class="muted">These prices apply only to the Mombasa agent.</p><div id="mombasaProducts"></div></section>';
+        const standardTarget = $('#standardProducts'), mombasaTarget = $('#mombasaProducts');
         const saveProduct = async (name, price, active) => {
           const response = await fetch(`/api/admin/goods-catalogue/${encodeURIComponent(name)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ price, active }) });
           const result = await response.json().catch(() => ({})); if (!response.ok) throw new Error(result.error || 'Unable to save this product.');
@@ -524,12 +518,23 @@
         const drawProducts = async () => {
           try {
             const response = await fetch('/api/admin/goods-catalogue'); const result = await response.json(); if (!response.ok) throw new Error(result.error || 'Unable to load product prices.');
-            productTarget.replaceChildren();
-            (result.products || []).forEach((product) => { const row = document.createElement('div'); row.className = 'filters'; const label = document.createElement('strong'); label.textContent = product.name; const priceLabel = document.createElement('label'); priceLabel.textContent = 'Standard price '; const price = Object.assign(document.createElement('input'), { type: 'number', min: '0', step: '0.01', value: product.price, ariaLabel: `${product.name} standard price` }); priceLabel.append(price); const mombasaLabel = document.createElement('label'); mombasaLabel.textContent = 'Mombasa price '; const mombasaPrice = Object.assign(document.createElement('input'), { type: 'number', min: '0', step: '0.01', value: product.mombasaPrice ?? product.price, ariaLabel: `${product.name} Mombasa price` }); mombasaLabel.append(mombasaPrice); const active = Object.assign(document.createElement('input'), { type: 'checkbox', checked: product.active !== false }); const activeLabel = document.createElement('label'); activeLabel.append(active, ' Active'); const saveMombasa = async () => { const response = await fetch(`/api/admin/goods-catalogue/${encodeURIComponent(product.name)}/mombasa-price`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ price: mombasaPrice.value }) }); const saved = await response.json().catch(() => ({})); if (!response.ok) throw new Error(saved.error || 'Unable to save the Mombasa price.'); }; const save = Object.assign(document.createElement('button'), { className: 'btn ghost', type: 'button', textContent: 'Save prices' }); save.addEventListener('click', async () => { save.disabled = true; try { await saveProduct(product.name, price.value, active.checked); await saveMombasa(); $('#productStatus').textContent = `${product.name} prices saved.`; await drawProducts(); } catch (error) { $('#productStatus').textContent = error.message; } finally { save.disabled = false; } }); row.append(label, priceLabel, mombasaLabel, activeLabel, save); productTarget.append(row); });
-          } catch (error) { showEmpty(productTarget, error.message || 'Unable to load product prices.'); }
+            standardTarget.replaceChildren(); mombasaTarget.replaceChildren();
+            (result.products || []).forEach((product) => { const standardRow = document.createElement('div'); standardRow.className = 'filters'; const standardName = document.createElement('strong'); standardName.textContent = product.name; const standardLabel = document.createElement('label'); standardLabel.textContent = 'Price '; const standardPrice = Object.assign(document.createElement('input'), { type: 'number', min: '0', step: '0.01', value: product.price, ariaLabel: `${product.name} standard price` }); standardLabel.append(standardPrice); const active = Object.assign(document.createElement('input'), { type: 'checkbox', checked: product.active !== false }); const activeLabel = document.createElement('label'); activeLabel.append(active, ' Active'); const saveStandard = Object.assign(document.createElement('button'), { className: 'btn ghost', type: 'button', textContent: 'Save standard price' }); saveStandard.addEventListener('click', async () => { const restore = setButtonLoading(saveStandard, 'Saving…'); try { await saveProduct(product.name, standardPrice.value, active.checked); $('#productStatus').textContent = `${product.name} standard price saved.`; await drawProducts(); } catch (error) { $('#productStatus').textContent = error.message; restore(); } }); standardRow.append(standardName, standardLabel, activeLabel, saveStandard); standardTarget.append(standardRow); });
+            (result.mombasaProducts || []).forEach((product) => { const mombasaRow = document.createElement('div'); mombasaRow.className = 'filters'; const mombasaName = document.createElement('strong'); mombasaName.textContent = product.name; const mombasaLabel = document.createElement('label'); mombasaLabel.textContent = 'Mombasa price '; const mombasaPrice = Object.assign(document.createElement('input'), { type: 'number', min: '0', step: '0.01', value: product.price, ariaLabel: `${product.name} Mombasa price` }); mombasaLabel.append(mombasaPrice); const detail = document.createElement('span'); detail.className = 'muted'; detail.textContent = product.standardProduct ? 'Standard product' : 'Mombasa-only product'; const saveMombasa = Object.assign(document.createElement('button'), { className: 'btn ghost', type: 'button', textContent: 'Save Mombasa price' }); saveMombasa.addEventListener('click', async () => { const restore = setButtonLoading(saveMombasa, 'Saving…'); try { const response = await fetch(`/api/admin/goods-catalogue/${encodeURIComponent(product.name)}/mombasa-price`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ price: mombasaPrice.value }) }); const saved = await response.json().catch(() => ({})); if (!response.ok) throw new Error(saved.error || 'Unable to save the Mombasa price.'); $('#productStatus').textContent = `${product.name} Mombasa price saved.`; await drawProducts(); } catch (error) { $('#productStatus').textContent = error.message; restore(); } }); mombasaRow.append(mombasaName, mombasaLabel, detail, saveMombasa); mombasaTarget.append(mombasaRow); });
+          } catch (error) { showEmpty(standardTarget, error.message || 'Unable to load product prices.'); showEmpty(mombasaTarget, error.message || 'Unable to load product prices.'); }
         };
-        document.getElementById('addProduct').addEventListener('submit', async (event) => { event.preventDefault(); const form = event.currentTarget; const button = form.querySelector('button'); button.disabled = true; try { const data = Object.fromEntries(new FormData(form).entries()); await saveProduct(data.name, data.price, true); form.reset(); $('#productStatus').textContent = 'Product added.'; await drawProducts(); } catch (error) { $('#productStatus').textContent = error.message || 'Unable to add product.'; } finally { button.disabled = false; } });
+        document.getElementById('addProduct').addEventListener('submit', async (event) => { event.preventDefault(); const form = event.currentTarget; const button = form.querySelector('button'); const restore = setButtonLoading(button, 'Adding…'); try { const data = Object.fromEntries(new FormData(form).entries()); await saveProduct(data.name, data.price, true); form.reset(); $('#productStatus').textContent = 'Product added.'; await drawProducts(); } catch (error) { $('#productStatus').textContent = error.message || 'Unable to add product.'; restore(); } });
         drawProducts();
+      }
+
+      function renderAccounts() {
+        root.innerHTML = '<p class="muted">Create and manage agent, field employee and accountant accounts. Deleting an account permanently removes its login access; existing request records are retained.</p><section class="card"><h2>Create accountant account</h2><form id="createAccountant"><div class="filters"><label>Full name <input name="fullName" required maxlength="160" /></label><label>Email <input name="email" type="email" required /></label><label>Temporary password <input name="password" type="password" minlength="8" required /></label><button class="btn" type="submit">Create accountant</button></div><p class="muted" id="accountantCreateStatus"></p></form></section><section><h2>Accountant registration requests</h2><div id="accountantApplications"></div></section><section><h2>Accounts</h2><div id="accounts"></div></section>';
+        document.getElementById('createAccountant').addEventListener('submit', async (event) => {
+          event.preventDefault(); const form = event.currentTarget; const status = $('#accountantCreateStatus'); const button = form.querySelector('button'); button.disabled = true; status.textContent = 'Creating accountant account…';
+          try { const response = await fetch('/api/admin/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...Object.fromEntries(new FormData(form).entries()), role: 'accountant' }) }); const result = await response.json().catch(() => ({})); if (!response.ok) throw new Error(result.error || 'Unable to create accountant account.'); form.reset(); status.textContent = 'Accountant account created.'; load(); }
+          catch (error) { status.textContent = error.message || 'Unable to create accountant account.'; }
+          finally { button.disabled = false; }
+        });
         const registrationTarget = $('#accountantApplications');
         const pendingRegistrations = accountantApplications.filter((application) => application.status === 'Pending');
         if (!pendingRegistrations.length) {
@@ -793,8 +798,7 @@
           return location.assign(portalRole === 'accountant' ? 'accountant-login.html' : 'admin-login.html');
         }
         const results = await Promise.allSettled([
-          fetch('/api/admin/pickup-requests'),
-          fetch('/api/admin/pickup-date-requests'),
+          fetch('/api/admin/pickup-requests?reportType=tickets'),
           portalRole === 'admin' ? fetch('/api/admin/accounts') : Promise.resolve(null),
           portalRole === 'admin' ? fetch('/api/admin/agent-applications') : Promise.resolve(null),
           portalRole === 'admin' ? fetch('/api/admin/accountant-applications') : Promise.resolve(null)
@@ -808,24 +812,21 @@
           return data;
         };
         try {
-          const requestData = await read(results[0], 'pickup requests');
+          const requestData = await read(results[0], 'tickets');
           requests = requestData.requests || [];
-          const pickupDateData = await read(results[1], 'pickup-date requests');
-          pickupDateRequests = pickupDateData.requests || [];
         } catch (error) {
           return showEmpty(root, error.message || 'Unable to load dashboard requests.');
         }
-        try { accounts = (await read(results[2], 'accounts')).accounts || []; } catch { accounts = []; }
-        try { applications = (await read(results[3], 'agent applications')).applications || []; } catch (error) {
+        try { accounts = (await read(results[1], 'accounts')).accounts || []; } catch { accounts = []; }
+        try { applications = (await read(results[2], 'agent applications')).applications || []; } catch (error) {
           if (viewName === 'applications') return showEmpty(root, error.message || 'Unable to load agent applications.');
         }
-        try { accountantApplications = (await read(results[4], 'accountant registrations')).applications || []; } catch { accountantApplications = []; }
-        if (viewName === 'approved-pickups') requests = requests.filter((request) => isPickupRequest(request) && request.status === 'Approved');
+        try { accountantApplications = (await read(results[3], 'accountant registrations')).applications || []; } catch { accountantApplications = []; }
         if (viewName === 'approved-agents') requests = requests.filter((request) => isAgentTicket(request) && request.status === 'Approved');
         if (viewName === 'approved-fields') requests = requests.filter((request) => !isPickupRequest(request));
         if (viewName === 'accounts') renderAccounts();
+        else if (viewName === 'products') renderProducts();
         else if (viewName === 'applications') renderApplications();
-        else if (viewName === 'pickup-dates') renderDateApprovals();
         else renderFiltersAndRequests();
       }
 

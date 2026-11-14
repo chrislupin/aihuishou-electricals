@@ -2206,12 +2206,15 @@ app.get(
         await readPickupRequests();
 
       const requestedType = typeof req.query?.requestType === "string" ? req.query.requestType : "";
+      if (requestedType === "agentPickup" || requestedType === "agent") {
+        return res.status(410).json({ error: "Agent pickup requests are no longer available." });
+      }
       const requestTypeMatches = (request) => {
         const type = request.requestType || "agent";
         if (req.requestUserType === "fieldEmployee") return type === "fieldEmployee";
         if (requestedType === "agentPickup") return type === "agentPickup" || type === "agent";
         if (requestedType === "agentTicket") return type === "agentTicket";
-        return type === "agent" || type === "agentPickup" || type === "agentTicket";
+        return type === "agentTicket";
       };
 
       const agentRequests =
@@ -2299,6 +2302,8 @@ app.get(
   "/api/pickup-date-requests",
   requireAgent,
   async (req, res) => {
+    return res.status(410).json({ error: "Agent pickup-date requests are no longer available." });
+    // Existing requests remain stored for audit purposes.
     try {
       const [dateRequests, pickupRequests] = await Promise.all([
         readPickupDateRequests(),
@@ -2326,6 +2331,8 @@ app.post(
   requestLimiter,
   requireAgent,
   async (req, res) => {
+    return res.status(410).json({ error: "Agent pickup-date requests are no longer available." });
+    // Existing requests remain stored for audit purposes.
     const requestedDate = typeof req.body?.requestedDate === "string"
       ? req.body.requestedDate.trim()
       : "";
@@ -2382,6 +2389,8 @@ app.get(
   "/api/admin/pickup-date-requests",
   requireOperationsViewer,
   async (req, res) => {
+    return res.status(410).json({ error: "Agent pickup-date requests are no longer available." });
+    // Existing requests remain stored for audit purposes.
     try {
       const [dateRequests, pickupRequests, accounts] = await Promise.all([
         readPickupDateRequests(),
@@ -2428,6 +2437,8 @@ app.post(
   "/api/admin/pickup-date-requests/:id/approve",
   requireAccountant,
   async (req, res) => {
+    return res.status(410).json({ error: "Agent pickup-date requests are no longer available." });
+    // Existing requests remain stored for audit purposes.
     try {
       const result = await pickupDateRequestsCollection.updateOne(
         { id: req.params.id, status: "Pending approval", active: true },
@@ -2458,6 +2469,8 @@ app.post(
   "/api/admin/pickup-date-requests/:id/reject",
   requireAccountant,
   async (req, res) => {
+    return res.status(410).json({ error: "Agent pickup-date requests are no longer available." });
+    // Existing requests remain stored for audit purposes.
     const reason = typeof req.body?.reason === "string" ? req.body.reason.trim().slice(0, 500) : "";
     try {
       const result = await pickupDateRequestsCollection.updateOne(
@@ -2556,8 +2569,7 @@ app.get(
       const person = normalizeEmail(req.query?.person);
       const filteredRequests = adminRequests.filter((request) => {
         const ticket = request.requestType === "fieldEmployee" || request.requestType === "agentTicket";
-        if (reportType === "tickets" && !ticket) return false;
-        if (reportType === "pickups" && ticket) return false;
+        if (!ticket || reportType === "pickups") return false;
         if (status && request.status !== status) return false;
         if (role === "agent" && request.requestType === "fieldEmployee") return false;
         if (role === "fieldEmployee" && request.requestType !== "fieldEmployee") return false;
@@ -2958,7 +2970,12 @@ app.get("/api/admin/goods-catalogue", requireAdmin, async (req, res) => {
     const products = await goodsCatalogueCollection.find({}, { projection: { _id: 0 } }).sort({ name: 1 }).toArray();
     const mombasaOverrides = await goodsPriceOverridesCollection.find({ email: MOMBASA_AGENT_EMAIL }, { projection: { _id: 0, name: 1, price: 1 } }).toArray();
     const mombasaPrices = Object.fromEntries(mombasaOverrides.map((item) => [item.name, item.price]));
-    return res.json({ products: products.map((product) => ({ ...product, mombasaPrice: mombasaPrices[product.name] ?? null })) });
+    const standardNames = new Set(products.map((product) => product.name));
+    const mombasaProducts = [
+      ...products.map((product) => ({ name: product.name, price: mombasaPrices[product.name] ?? product.price, active: product.active !== false, standardProduct: true })),
+      ...mombasaOverrides.filter((product) => !standardNames.has(product.name)).map((product) => ({ name: product.name, price: product.price, active: true, standardProduct: false }))
+    ].sort((first, second) => first.name.localeCompare(second.name));
+    return res.json({ products: products.map((product) => ({ ...product, mombasaPrice: mombasaPrices[product.name] ?? null })), mombasaProducts });
   } catch (error) {
     console.error("Goods catalogue lookup failed:", error.message);
     return res.status(500).json({ error: "Unable to load the goods catalogue." });
@@ -2970,7 +2987,6 @@ app.put("/api/admin/goods-catalogue/:name/mombasa-price", requireAdmin, async (r
   const price = Number(req.body?.price);
   if (!name || !Number.isFinite(price) || price < 0 || price > 100000000) return res.status(400).json({ error: "Enter a valid non-negative Mombasa price." });
   try {
-    if (!await goodsCatalogueCollection.findOne({ name })) return res.status(404).json({ error: "Product not found." });
     await goodsPriceOverridesCollection.updateOne(
       { email: MOMBASA_AGENT_EMAIL, name },
       { $set: { email: MOMBASA_AGENT_EMAIL, name, price, updatedAt: new Date().toISOString(), updatedBy: req.admin.email }, $setOnInsert: { createdAt: new Date().toISOString() } },
@@ -3412,6 +3428,9 @@ app.post(
     const submittedRequestType = typeof requestType === "string" && requestType.trim()
       ? requestType.trim()
       : (req.requestUserType || "agent");
+    if (submittedRequestType === "agentPickup" || submittedRequestType === "agent") {
+      return res.status(410).json({ error: "Agent pickup requests are no longer available. Create an agent ticket instead." });
+    }
     const isFieldEmployee = submittedRequestType === "fieldEmployee";
     const isAgentPickup = submittedRequestType === "agentPickup" || submittedRequestType === "agent";
     const isAgentTicket = submittedRequestType === "agentTicket";

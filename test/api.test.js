@@ -196,8 +196,8 @@ test("agent and field-employee sessions remain role-specific", async () => {
     headers: { cookie: agentCookie, "content-type": "application/json" },
     body: JSON.stringify({ requestType: "agentPickup", goods: [{ name: "LCDs", quantity: 1 }], location: "Nairobi", preferredDate: businessDateKey() })
   });
-  assert.equal(result.response.status, 400);
-  assert.equal(result.body.error, "Notes are required.");
+  assert.equal(result.response.status, 410);
+  assert.match(result.body.error, /no longer available/);
   const fieldCookie = await login("/api/field-employee-login", field.email, "field-password", "field_employee_session");
   result = await request("/api/field-employee-session", { headers: { cookie: fieldCookie } });
   assert.equal(result.response.status, 200);
@@ -302,7 +302,7 @@ test("ticket submissions use the Nairobi weekday and Saturday cutoffs", async ()
   app.locals.ticketSubmissionTime = new Date("2026-09-21T09:00:00.000Z");
 });
 
-test("admin creates accountant accounts but only accountants can approve tickets and pickup dates", async () => {
+test("admin creates accountant accounts but only accountants can approve tickets", async () => {
   const adminCookie = await login("/api/admin-login", "admin@example.com", "admin-password", "admin_session");
   let result = await request("/api/admin/accounts", {
     method: "POST",
@@ -348,15 +348,8 @@ test("admin creates accountant accounts but only accountants can approve tickets
   assert.equal(result.body.emailSent, false);
   assert.equal((await collection("pickup_requests").findOne({ id: "rejection-email-failure-ticket" })).status, "Rejected");
   assert.equal((await collection("pickup_requests").findOne({ id: "rejection-email-failure-ticket" })).statusEmailStatus, "Failed");
-  collection("pickup_date_requests").records.push({ id: "accountant-date", agentEmail: "owner@example.com", requestedDate: businessDateKey(), status: "Pending approval", active: true, createdAt: new Date().toISOString() });
   result = await request("/api/admin/pickup-date-requests", { headers: { cookie: adminCookie } });
-  assert.equal(result.response.status, 200);
-  assert.ok(result.body.requests.some((item) => item.id === "accountant-date"));
-  result = await request("/api/admin/pickup-date-requests/accountant-date/approve", { method: "POST", headers: { cookie: adminCookie } });
-  assert.equal(result.response.status, 401);
-  result = await request("/api/admin/pickup-date-requests/accountant-date/approve", { method: "POST", headers: { cookie: accountantCookie } });
-  assert.equal(result.response.status, 200);
-  assert.equal((await collection("pickup_date_requests").findOne({ id: "accountant-date" })).reviewedBy, "accountant@example.com");
+  assert.equal(result.response.status, 410);
 });
 
 test("accountant registration needs admin approval and then supports password reset", async () => {
@@ -712,7 +705,7 @@ test("report totals and goods subtotals are derived from line items in cents", a
   assert.deepEqual(result.body.items.find((item) => item.name === "Accurate Report Device"), { name: "Accurate Report Device", quantity: 3, amount: 59.99 });
 });
 
-test("agents and field employees can view collective goods totals for the current month", async () => {
+test("agents and field employees can view their own monthly goods totals", async () => {
   const recordedAt = new Date().toISOString();
   const previousMonth = new Date(recordedAt);
   previousMonth.setUTCMonth(previousMonth.getUTCMonth() - 1);
