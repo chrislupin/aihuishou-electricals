@@ -180,6 +180,27 @@ button:disabled {
   transform: none;
 }
 
+button.is-loading::before {
+  display: inline-block;
+  width: .9em;
+  height: .9em;
+  margin-right: 7px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  content: '';
+  vertical-align: -1px;
+  animation: aihuishou-button-spin .7s linear infinite;
+}
+
+@keyframes aihuishou-button-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
+
 .site-footer { margin-top: 64px; padding: 52px 0 22px; background: linear-gradient(145deg, #061d3a, #082a62 58%, #0b427c); color: #d8e9f8; }
 .site-footer .footer-grid { display: grid; grid-template-columns: minmax(220px, 1.5fr) repeat(3, minmax(150px, 1fr)); gap: 34px; }
 .site-footer .footer-brand { max-width: 330px; }

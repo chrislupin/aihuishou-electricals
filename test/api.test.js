@@ -742,3 +742,77 @@ test("agents and field employees can view collective goods totals for the curren
   assert.equal(result.body.totalAmount, 600);
   assert.equal(result.body.items.some((item) => item.name === "Monthly Summary Agent Good"), false);
 });
+
+test("field employee accounts require administrator approval before they can submit tickets", async () => {
+  const email = "pending-field@example.com";
+  let result = await request("/api/field-employee-signup", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ fullName: "Pending Field", phone: "0712345678", email, password: "field-password" })
+  });
+  assert.equal(result.response.status, 201);
+  assert.equal((await collection("agent_accounts").findOne({ email })).accessStatus, "pending");
+  result = await request("/api/field-employee-login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email, password: "field-password" }) });
+  assert.equal(result.response.status, 401);
+
+  const adminCookie = await login("/api/admin-login", "admin@example.com", "admin-password", "admin_session");
+  result = await request(`/api/admin/accounts/${encodeURIComponent(email)}/approve-field-employee`, { method: "POST", headers: { cookie: adminCookie } });
+  assert.equal(result.response.status, 200);
+  assert.equal((await collection("agent_accounts").findOne({ email })).accessStatus, "active");
+  result = await request("/api/field-employee-login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email, password: "field-password" }) });
+  assert.equal(result.response.status, 200);
+  assert.ok(await collection("security_audit_log").findOne({ action: "field_employee.approved" }));
+});
+
+test("administrators can grant and revoke audited ticket-cutoff exemptions", async () => {
+  const agent = passwordAccount("cutoff-setting@example.com", "agent-password");
+  collection("agent_accounts").records.push(agent);
+  const adminCookie = await login("/api/admin-login", "admin@example.com", "admin-password", "admin_session");
+  let result = await request(`/api/admin/accounts/${encodeURIComponent(agent.email)}/ticket-cutoff-exemption`, { method: "PUT", headers: { cookie: adminCookie, "content-type": "application/json" }, body: JSON.stringify({ exempt: true }) });
+  assert.equal(result.response.status, 200);
+  assert.ok(await collection("ticket_cutoff_exemptions").findOne({ email: agent.email }));
+
+  app.locals.ticketSubmissionTime = new Date("2026-09-21T14:02:00.000Z");
+  const agentCookie = signedSessionCookie("agent_session", { email: agent.email, role: "agent", sessionVersion: 0 });
+  const payload = { requestType: "agentTicket", goods: [{ name: "LCDs", quantity: 1, amount: 1 }], notes: "Exemption test.", idempotencyKey: "cutoff-setting-exempt" };
+  result = await request("/api/pickup-requests", { method: "POST", headers: { cookie: agentCookie, "content-type": "application/json" }, body: JSON.stringify(payload) });
+  assert.equal(result.response.status, 201);
+
+  result = await request(`/api/admin/accounts/${encodeURIComponent(agent.email)}/ticket-cutoff-exemption`, { method: "PUT", headers: { cookie: adminCookie, "content-type": "application/json" }, body: JSON.stringify({ exempt: false }) });
+  assert.equal(result.response.status, 200);
+  result = await request("/api/pickup-requests", { method: "POST", headers: { cookie: agentCookie, "content-type": "application/json" }, body: JSON.stringify({ ...payload, idempotencyKey: "cutoff-setting-revoked" }) });
+  assert.equal(result.response.status, 403);
+  assert.ok(await collection("security_audit_log").findOne({ action: "ticket_cutoff_exemption.revoked" }));
+});
+
+test("administrators manage product prices and tickets use the live catalogue", async () => {
+  const adminCookie = await login("/api/admin-login", "admin@example.com", "admin-password", "admin_session");
+  let result = await request("/api/admin/goods-catalogue/16GB", { method: "PUT", headers: { cookie: adminCookie, "content-type": "application/json" }, body: JSON.stringify({ price: 333, active: true }) });
+  assert.equal(result.response.status, 200);
+  const agent = passwordAccount("catalogue-agent@example.com", "agent-password");
+  collection("agent_accounts").records.push(agent);
+  const agentCookie = await login("/api/agent-login", agent.email, "agent-password", "agent_session");
+  result = await request("/api/agent-session", { headers: { cookie: agentCookie } });
+  assert.equal(result.body.agent.goodsPrices["16GB"], 333);
+  app.locals.ticketSubmissionTime = new Date("2026-09-21T09:00:00.000Z");
+  result = await request("/api/pickup-requests", { method: "POST", headers: { cookie: agentCookie, "content-type": "application/json" }, body: JSON.stringify({ requestType: "agentTicket", goods: [{ name: "16GB", quantity: 2, amount: 1 }], notes: "Live catalogue price.", idempotencyKey: "live-catalogue-price" }) });
+  assert.equal(result.response.status, 201);
+  assert.equal(result.body.request.goods[0].amount, 333);
+  assert.ok(await collection("security_audit_log").findOne({ action: "goods_catalogue.updated" }));
+});
+
+test("administrators manage the Mombasa agent's product prices", async () => {
+  const adminCookie = await login("/api/admin-login", "admin@example.com", "admin-password", "admin_session");
+  const mombasa = await collection("agent_accounts").findOne({ email: "gisorebarrack5@gmail.com" });
+  assert.ok(mombasa);
+  let result = await request("/api/admin/goods-catalogue/16GB/mombasa-price", { method: "PUT", headers: { cookie: adminCookie, "content-type": "application/json" }, body: JSON.stringify({ price: 444 }) });
+  assert.equal(result.response.status, 200);
+  const mombasaCookie = await login("/api/agent-login", mombasa.email, "mombasa-agent-password", "agent_session");
+  result = await request("/api/agent-session", { headers: { cookie: mombasaCookie } });
+  assert.equal(result.body.agent.goodsPrices["16GB"], 444);
+  app.locals.ticketSubmissionTime = new Date("2026-09-21T09:00:00.000Z");
+  result = await request("/api/pickup-requests", { method: "POST", headers: { cookie: mombasaCookie, "content-type": "application/json" }, body: JSON.stringify({ requestType: "agentTicket", goods: [{ name: "16GB", quantity: 2, amount: 1 }], notes: "Mombasa live price.", idempotencyKey: "mombasa-live-price" }) });
+  assert.equal(result.response.status, 201);
+  assert.equal(result.body.request.goods[0].amount, 444);
+  assert.ok(await collection("security_audit_log").findOne({ action: "goods_catalogue.mombasa_price_updated" }));
+});

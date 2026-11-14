@@ -462,7 +462,8 @@
           status.textContent = `No ${selectedNounPlural()} match the current analysis filters.`;
           return;
         }
-        button.disabled = true;
+        const label = button.textContent;
+        button.disabled = true; button.classList.add('is-loading'); button.textContent = 'Preparing…';
         status.textContent = 'Preparing your report…';
         try {
           const auditResponse = await fetch('/api/operations/report-exports', {
@@ -479,7 +480,7 @@
         } catch (error) {
           status.textContent = error.message || 'Unable to generate the report.';
         } finally {
-          button.disabled = false;
+          button.disabled = false; button.classList.remove('is-loading'); button.textContent = label;
         }
       }
 

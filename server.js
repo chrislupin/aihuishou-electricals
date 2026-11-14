@@ -88,18 +88,21 @@ const ACCOUNT_GOODS_PRICES = Object.freeze({
 });
 const PRICE_OVERRIDE_AGENT_EMAIL = "lukusaalain483@gmail.com";
 const MOMBASA_AGENT_EMAIL = "gisorebarrack5@gmail.com";
-const TICKET_SUBMISSION_CUTOFF_EXEMPT_EMAILS = new Set([
+// These legacy exemptions are migrated once to an audited database setting.
+const LEGACY_TICKET_SUBMISSION_CUTOFF_EXEMPT_EMAILS = [
   "lukusaalain483@gmail.com",
   "bhativicent@gmail.com",
   "efofobolo@gmail.com",
   "yvonnekathure98@gmail.com",
   MOMBASA_AGENT_EMAIL
-]);
+];
 function canSetGoodsPrices(agent) {
   return normalizeEmail(agent?.email) === PRICE_OVERRIDE_AGENT_EMAIL;
 }
-function goodsPricesFor(agent) {
-  return ACCOUNT_GOODS_PRICES[normalizeEmail(agent?.email)] || GOODS_PRICES;
+async function goodsPricesFor(agent, cataloguePrices = GOODS_PRICES) {
+  const email = normalizeEmail(agent?.email);
+  const overrides = await goodsPriceOverridesCollection.find({ email }, { projection: { _id: 0, name: 1, price: 1 } }).toArray();
+  return Object.fromEntries([...Object.entries(cataloguePrices), ...overrides.map((item) => [item.name, Number(item.price)])]);
 }
 const MAX_PASSWORD_LENGTH = 256;
 const BUSINESS_TIMEZONE = "Africa/Nairobi";
@@ -137,12 +140,23 @@ const agentApplicationsCollection = database?.collection("agent_applications");
 const agentAccessInvitesCollection = database?.collection("agent_access_invites");
 const accountantApplicationsCollection = database?.collection("accountant_applications");
 const securityAuditLogCollection = database?.collection("security_audit_log");
+const ticketCutoffExemptionsCollection = database?.collection("ticket_cutoff_exemptions");
+const goodsCatalogueCollection = database?.collection("goods_catalogue");
+const goodsPriceOverridesCollection = database?.collection("goods_price_overrides");
 const expensesCollection = database?.collection("employee_expenses");
 const expenseRevisionsCollection = database?.collection("employee_expense_revisions");
 const EXPENSE_TYPES = new Set(["Meal", "Transport", "Credit/Bundle", "Other"]);
 
 const adminEmail = normalizeConfiguredEmail(process.env.ADMIN_EMAIL);
 const configuredAppUrl = normalizeAppUrl(process.env.APP_URL);
+
+async function activeGoodsPrices() {
+  const products = await goodsCatalogueCollection.find(
+    { active: true },
+    { projection: { _id: 0, name: 1, price: 1 } }
+  ).sort({ name: 1 }).toArray();
+  return Object.fromEntries(products.map((product) => [product.name, Number(product.price)]));
+}
 
 if (process.env.NODE_ENV === "production" && !configuredAppUrl) {
   throw new Error("APP_URL must be a valid HTTPS URL in production.");
@@ -321,6 +335,7 @@ app.get("/sitemap.xml", (req, res) => {
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 20,
+  skip: () => process.env.NODE_ENV === "test",
   standardHeaders: "draft-8",
   legacyHeaders: false
 });
@@ -328,6 +343,7 @@ const authLimiter = rateLimit({
 const requestLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 30,
+  skip: () => process.env.NODE_ENV === "test",
   standardHeaders: "draft-8",
   legacyHeaders: false
 });
@@ -406,8 +422,9 @@ function ticketSubmissionTime() {
   return testTime instanceof Date ? testTime : new Date();
 }
 
-function ticketSubmissionCutoffError(requestType, agent, value = ticketSubmissionTime()) {
-  if (TICKET_SUBMISSION_CUTOFF_EXEMPT_EMAILS.has(normalizeEmail(agent?.email))) return "";
+async function ticketSubmissionCutoffError(requestType, agent, value = ticketSubmissionTime()) {
+  const email = normalizeEmail(agent?.email);
+  if (email && await ticketCutoffExemptionsCollection.findOne({ email })) return "";
 
   const role = requestType === "fieldEmployee" ? "field employee" : requestType === "agentTicket" ? "agent" : "";
   if (!role) return "";
@@ -494,8 +511,12 @@ function isSafeCustomGoodName(value) {
     && /^[\p{L}\p{N}][\p{L}\p{N}\s&/().,'+-]*$/u.test(name);
 }
 
-function isAcceptedGoodName(value) {
-  return typeof value === "string" && (GOODS_OPTIONS.has(value.trim()) || isSafeCustomGoodName(value));
+async function isAcceptedGoodName(value, cataloguePrices = GOODS_PRICES) {
+  if (typeof value !== "string") return false;
+  const name = value.trim();
+  if (Object.hasOwn(cataloguePrices, name) || name === "RAMS") return true;
+  if (!isSafeCustomGoodName(name)) return false;
+  return !await goodsCatalogueCollection.findOne({ name });
 }
 
 function isValidDateNotInPast(value) {
@@ -818,6 +839,39 @@ async function backfillTicketApprovalDates() {
   await database.collection("migrations").insertOne({ name: "ticket-approved-at-v1", migratedAt: new Date() });
 }
 
+async function migrateTicketSubmissionCutoffExemptions() {
+  if (!database || await database.collection("migrations").findOne({ name: "ticket-cutoff-exemptions-v1" })) return;
+  const migratedAt = new Date().toISOString();
+  for (const email of LEGACY_TICKET_SUBMISSION_CUTOFF_EXEMPT_EMAILS) {
+    await ticketCutoffExemptionsCollection.updateOne(
+      { email },
+      { $set: { email, createdAt: migratedAt, createdBy: "system", source: "legacy" } },
+      { upsert: true }
+    );
+  }
+  await database.collection("migrations").insertOne({ name: "ticket-cutoff-exemptions-v1", migratedAt: new Date() });
+}
+
+async function migrateGoodsCatalogue() {
+  if (!database || await database.collection("migrations").findOne({ name: "goods-catalogue-v1" })) return;
+  const now = new Date().toISOString();
+  for (const [name, price] of Object.entries(GOODS_PRICES)) {
+    await goodsCatalogueCollection.updateOne({ name }, { $set: { name, price, active: true, createdAt: now, updatedAt: now, updatedBy: "system" } }, { upsert: true });
+  }
+  await database.collection("migrations").insertOne({ name: "goods-catalogue-v1", migratedAt: new Date() });
+}
+
+async function migrateGoodsPriceOverrides() {
+  if (!database || await database.collection("migrations").findOne({ name: "goods-price-overrides-v1" })) return;
+  const now = new Date().toISOString();
+  for (const [email, prices] of Object.entries(ACCOUNT_GOODS_PRICES)) {
+    for (const [name, price] of Object.entries(prices)) {
+      await goodsPriceOverridesCollection.updateOne({ email, name }, { $set: { email, name, price, createdAt: now, updatedAt: now, updatedBy: "system" } }, { upsert: true });
+    }
+  }
+  await database.collection("migrations").insertOne({ name: "goods-price-overrides-v1", migratedAt: new Date() });
+}
+
 async function removeDuplicateAccounts() {
   const duplicateGroups = await accountsCollection.aggregate([
     { $match: { email: { $type: "string" } } },
@@ -887,6 +941,9 @@ async function ensureDatabase() {
       await migrateJsonData();
       await migrateTicketRevisions();
       await backfillTicketApprovalDates();
+      await migrateTicketSubmissionCutoffExemptions();
+      await migrateGoodsCatalogue();
+      await migrateGoodsPriceOverrides();
       await removeDuplicateAccounts();
       await reconcileDuplicatePendingApplications(agentApplicationsCollection, "agent");
       await reconcileDuplicatePendingApplications(accountantApplicationsCollection, "accountant");
@@ -925,6 +982,9 @@ async function ensureDatabase() {
         ),
         securityAuditLogCollection.createIndex({ id: 1 }, { unique: true }),
         securityAuditLogCollection.createIndex({ createdAt: -1 }),
+        ticketCutoffExemptionsCollection.createIndex({ email: 1 }, { unique: true }),
+        goodsCatalogueCollection.createIndex({ name: 1 }, { unique: true }),
+        goodsPriceOverridesCollection.createIndex({ email: 1, name: 1 }, { unique: true }),
         expensesCollection.createIndex({ id: 1 }, { unique: true }),
         expensesCollection.createIndex({ spentOn: -1 }),
         expensesCollection.createIndex({ employeeEmail: 1, spentOn: -1 }),
@@ -1175,7 +1235,7 @@ async function getCurrentFieldEmployee(req) {
   }
 
   const account = await getAccountByEmail(session.email);
-  return account?.role === "fieldEmployee" && account.accessStatus !== "disabled" && sessionVersion(account.sessionVersion) === sessionVersion(session.sessionVersion) ? account : null;
+  return account?.role === "fieldEmployee" && account.accessStatus === "active" && sessionVersion(account.sessionVersion) === sessionVersion(session.sessionVersion) ? account : null;
 }
 
 async function requireFieldEmployee(req, res, next) {
@@ -1349,7 +1409,8 @@ app.post(
 app.get(
   "/api/agent-session",
   requireAgent,
-  (req, res) => {
+  async (req, res) => {
+    const cataloguePrices = await activeGoodsPrices();
     res.json({
       agent: {
         fullName:
@@ -1357,7 +1418,7 @@ app.get(
         phone: req.agent.phone,
         email: req.agent.email,
         canSetGoodsPrices: canSetGoodsPrices(req.agent),
-        goodsPrices: goodsPricesFor(req.agent)
+        goodsPrices: await goodsPricesFor(req.agent, cataloguePrices)
       }
     });
   }
@@ -1404,7 +1465,7 @@ app.post(
       if (
         !account ||
         account.role !== "fieldEmployee" ||
-        account.accessStatus === "disabled" ||
+        account.accessStatus !== "active" ||
         !account.salt ||
         !account.passwordHash
       ) {
@@ -1529,6 +1590,7 @@ app.post(
 
       const account = {
         role: "fieldEmployee",
+        accessStatus: "pending",
         fullName: cleanFullName,
         phone: cleanPhone,
         email: normalizedEmail,
@@ -1574,20 +1636,9 @@ app.post(
         );
       }
 
-      createFieldEmployeeSession(
-        res,
-        account
-      );
-
       return res.status(201).json({
-        employee: {
-          fullName:
-            account.fullName,
-          phone:
-            account.phone,
-          email:
-            account.email
-        }
+        message: "Your field employee account is awaiting administrator approval.",
+        employee: { fullName: account.fullName, phone: account.phone, email: account.email, accessStatus: account.accessStatus }
       });
     } catch (error) {
       console.error(
@@ -1606,15 +1657,16 @@ app.post(
 app.get(
   "/api/field-employee-session",
   requireFieldEmployee,
-  (req, res) => {
+  async (req, res) => {
+    const cataloguePrices = await activeGoodsPrices();
     res.json({
       employee: {
         fullName:
           req.agent.fullName,
         phone:
           req.agent.phone,
-        email:
-          req.agent.email
+        email: req.agent.email,
+        goodsPrices: cataloguePrices
       }
     });
   }
@@ -2885,17 +2937,69 @@ app.get("/api/admin/accounts", requireAdmin, async (req, res) => {
       {},
       { projection: { _id: 0, passwordHash: 0, salt: 0 } }
     ).sort({ fullName: 1 }).toArray();
+    const exemptEmails = new Set((await ticketCutoffExemptionsCollection.find({}, { projection: { _id: 0, email: 1 } }).toArray()).map((item) => item.email));
     // The current dashboard was built with a static HTML template for this
     // list. Preserve safety for records created before input validation.
     res.json({
       accounts: accounts.map((account) => ({
         ...account,
+        ticketCutoffExempt: exemptEmails.has(account.email),
         fullName: String(account.fullName || "").replace(/[<>]/g, "")
       }))
     });
   } catch (error) {
     console.error("Admin account lookup failed:", error.message);
     res.status(500).json({ error: "Unable to load accounts." });
+  }
+});
+
+app.get("/api/admin/goods-catalogue", requireAdmin, async (req, res) => {
+  try {
+    const products = await goodsCatalogueCollection.find({}, { projection: { _id: 0 } }).sort({ name: 1 }).toArray();
+    const mombasaOverrides = await goodsPriceOverridesCollection.find({ email: MOMBASA_AGENT_EMAIL }, { projection: { _id: 0, name: 1, price: 1 } }).toArray();
+    const mombasaPrices = Object.fromEntries(mombasaOverrides.map((item) => [item.name, item.price]));
+    return res.json({ products: products.map((product) => ({ ...product, mombasaPrice: mombasaPrices[product.name] ?? null })) });
+  } catch (error) {
+    console.error("Goods catalogue lookup failed:", error.message);
+    return res.status(500).json({ error: "Unable to load the goods catalogue." });
+  }
+});
+
+app.put("/api/admin/goods-catalogue/:name/mombasa-price", requireAdmin, async (req, res) => {
+  const name = applicationField(req.params.name, 80);
+  const price = Number(req.body?.price);
+  if (!name || !Number.isFinite(price) || price < 0 || price > 100000000) return res.status(400).json({ error: "Enter a valid non-negative Mombasa price." });
+  try {
+    if (!await goodsCatalogueCollection.findOne({ name })) return res.status(404).json({ error: "Product not found." });
+    await goodsPriceOverridesCollection.updateOne(
+      { email: MOMBASA_AGENT_EMAIL, name },
+      { $set: { email: MOMBASA_AGENT_EMAIL, name, price, updatedAt: new Date().toISOString(), updatedBy: req.admin.email }, $setOnInsert: { createdAt: new Date().toISOString() } },
+      { upsert: true }
+    );
+    await recordSecurityEvent(req, "goods_catalogue.mombasa_price_updated", { email: MOMBASA_AGENT_EMAIL, name }, { price });
+    return res.json({ name, price });
+  } catch (error) {
+    console.error("Mombasa product price update failed:", error.message);
+    return res.status(500).json({ error: "Unable to save the Mombasa product price." });
+  }
+});
+
+app.put("/api/admin/goods-catalogue/:name", requireAdmin, async (req, res) => {
+  const name = applicationField(req.params.name, 80);
+  const price = Number(req.body?.price);
+  const active = req.body?.active !== false;
+  if (!name || !Number.isFinite(price) || price < 0 || price > 100000000) return res.status(400).json({ error: "Enter a product name and a valid non-negative price." });
+  try {
+    await goodsCatalogueCollection.updateOne(
+      { name },
+      { $set: { name, price, active, updatedAt: new Date().toISOString(), updatedBy: req.admin.email }, $setOnInsert: { createdAt: new Date().toISOString() } },
+      { upsert: true }
+    );
+    await recordSecurityEvent(req, "goods_catalogue.updated", { name }, { price, active });
+    return res.json({ product: { name, price, active } });
+  } catch (error) {
+    console.error("Goods catalogue update failed:", error.message);
+    return res.status(500).json({ error: "Unable to save the product price." });
   }
 });
 
@@ -2947,6 +3051,46 @@ app.post("/api/admin/accounts/:email/disable", requireAdmin, async (req, res) =>
   } catch (error) {
     console.error("Account disable failed:", error.message);
     return res.status(500).json({ error: "Unable to disable account." });
+  }
+});
+
+app.post("/api/admin/accounts/:email/approve-field-employee", requireAdmin, async (req, res) => {
+  try {
+    const email = normalizeEmail(req.params.email);
+    if (!email) return res.status(400).json({ error: "A valid account email is required." });
+    const result = await accountsCollection.updateOne(
+      { email, role: "fieldEmployee", accessStatus: "pending" },
+      { $set: { accessStatus: "active", approvedAt: new Date().toISOString(), approvedBy: req.admin.email }, $inc: { sessionVersion: 1 } }
+    );
+    if (!result.matchedCount) return res.status(409).json({ error: "This field employee account is not awaiting approval." });
+    await recordSecurityEvent(req, "field_employee.approved", { email });
+    return res.json({ message: "Field employee account approved. The employee can now sign in and submit tickets." });
+  } catch (error) {
+    console.error("Field employee approval failed:", error.message);
+    return res.status(500).json({ error: "Unable to approve the field employee account." });
+  }
+});
+
+app.put("/api/admin/accounts/:email/ticket-cutoff-exemption", requireAdmin, async (req, res) => {
+  try {
+    const email = normalizeEmail(req.params.email);
+    const exempt = req.body?.exempt === true;
+    if (!email) return res.status(400).json({ error: "A valid account email is required." });
+    if (!await getAccountByEmail(email)) return res.status(404).json({ error: "Account not found." });
+    if (exempt) {
+      await ticketCutoffExemptionsCollection.updateOne(
+        { email },
+        { $set: { email, updatedAt: new Date().toISOString(), updatedBy: req.admin.email, source: "admin" } },
+        { upsert: true }
+      );
+    } else {
+      await ticketCutoffExemptionsCollection.deleteOne({ email });
+    }
+    await recordSecurityEvent(req, exempt ? "ticket_cutoff_exemption.granted" : "ticket_cutoff_exemption.revoked", { email });
+    return res.json({ message: exempt ? "Ticket cutoff exemption granted." : "Ticket cutoff exemption revoked.", exempt });
+  } catch (error) {
+    console.error("Ticket cutoff exemption update failed:", error.message);
+    return res.status(500).json({ error: "Unable to update the ticket cutoff exemption." });
   }
 });
 
@@ -3271,16 +3415,16 @@ app.post(
     const isFieldEmployee = submittedRequestType === "fieldEmployee";
     const isAgentPickup = submittedRequestType === "agentPickup" || submittedRequestType === "agent";
     const isAgentTicket = submittedRequestType === "agentTicket";
+    const cataloguePrices = await activeGoodsPrices();
 
     const validGoods =
       Array.isArray(goods) &&
       goods.length > 0 &&
-      goods.every(
-        (item) =>
-          item &&
+      (await Promise.all(goods.map(async (item) =>
+        item &&
           typeof item.name ===
             "string" &&
-          isAcceptedGoodName(item.name) &&
+          await isAcceptedGoodName(item.name, cataloguePrices) &&
           (
             typeof item.quantity ===
               "number" ||
@@ -3301,7 +3445,7 @@ app.post(
               Number(item.amount) >= 0
             )
           )
-      );
+      ))).every(Boolean);
 
     const cleanLocation = applicationField(location, 160);
     const cleanNotes = applicationField(notes || "", 1000);
@@ -3362,14 +3506,15 @@ app.post(
       const { agentEmail, ...request } = existingRequest;
       return res.status(200).json({ message: "This submission was already saved.", emailSent: true, idempotentReplay: true, request });
     }
-    const submissionCutoffError = ticketSubmissionCutoffError(submittedRequestType, req.agent);
+    const submissionCutoffError = await ticketSubmissionCutoffError(submittedRequestType, req.agent);
     if (submissionCutoffError) {
       return res.status(403).json({ error: submissionCutoffError });
     }
+    const effectiveGoodsPrices = await goodsPricesFor(req.agent, cataloguePrices);
     const cleanedGoods = goods.map((item) => {
       const name = item.name.trim();
       const amount = isAgentPickup || !canSetGoodsPrices(req.agent)
-        ? (isAgentPickup ? 0 : (goodsPricesFor(req.agent)[name] ?? Number(item.amount)))
+        ? (isAgentPickup ? 0 : (effectiveGoodsPrices[name] ?? Number(item.amount)))
         : Number(item.amount);
       return { name, quantity: Number(item.quantity), amount, totalAmount: isAgentPickup ? 0 : calculateLineTotal({ quantity: item.quantity, amount }) };
     });
@@ -3595,9 +3740,14 @@ app.post(
         console.error("Ticket rejection email failed:", mailError.message);
       }
       await recordRequestDecisionOutcome(req, request, "pickup_request.rejected", statusEmailSent);
+      request.status = "Rejected";
+      request.rejectedAt = rejectedAt;
+      request.rejectedBy = req.accountant.email;
+      request.rejectionReason = rejectionReason;
       return res.json({
         message: statusEmailSent ? "Ticket rejected and notification email sent. Its owner can edit and resubmit it." : "Ticket rejected, but the notification email could not be sent. Its owner can edit and resubmit it.",
-        emailSent: statusEmailSent
+        emailSent: statusEmailSent,
+        request
       });
     } catch (error) {
       console.error("Ticket rejection failed:", error.message);
@@ -3613,14 +3763,15 @@ app.put(
   async (req, res) => {
     const isFieldEmployee = req.requestUserType === "fieldEmployee";
     const allowedType = isFieldEmployee ? "fieldEmployee" : "agentTicket";
+    const cataloguePrices = await activeGoodsPrices();
     const { goods, notes } = req.body || {};
     const cleanNotes = applicationField(notes || "", 1000);
     const invalidNotes = (typeof notes !== "undefined" && typeof notes !== "string")
       || (typeof notes === "string" && notes.trim() && !cleanNotes);
-    const validGoods = Array.isArray(goods) && goods.length > 0 && goods.every((item) =>
+    const validGoods = Array.isArray(goods) && goods.length > 0 && (await Promise.all(goods.map(async (item) =>
       item
       && typeof item.name === "string"
-      && isAcceptedGoodName(item.name)
+      && await isAcceptedGoodName(item.name, cataloguePrices)
       && (typeof item.quantity === "number" || typeof item.quantity === "string")
       && String(item.quantity).trim()
       && Number.isFinite(Number(item.quantity))
@@ -3629,7 +3780,7 @@ app.put(
       && String(item.amount).trim()
       && Number.isFinite(Number(item.amount))
       && Number(item.amount) >= 0
-    );
+    ))).every(Boolean);
 
     if (!validGoods) {
       return res.status(400).json({
@@ -3643,16 +3794,17 @@ app.put(
       return res.status(400).json({ error: "Notes are required." });
     }
 
-    const submissionCutoffError = ticketSubmissionCutoffError(allowedType, req.agent);
+    const submissionCutoffError = await ticketSubmissionCutoffError(allowedType, req.agent);
     if (submissionCutoffError) {
       return res.status(403).json({ error: submissionCutoffError });
     }
 
+    const effectiveGoodsPrices = await goodsPricesFor(req.agent, cataloguePrices);
     const cleanedGoods = goods.map((item) => {
       const name = item.name.trim();
       const amount = canSetGoodsPrices(req.agent)
         ? Number(item.amount)
-        : (goodsPricesFor(req.agent)[name] ?? Number(item.amount));
+        : (effectiveGoodsPrices[name] ?? Number(item.amount));
       return { name, quantity: Number(item.quantity), amount, totalAmount: calculateLineTotal({ quantity: item.quantity, amount }) };
     });
     const now = new Date().toISOString();
