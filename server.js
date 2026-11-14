@@ -88,6 +88,7 @@ const ACCOUNT_GOODS_PRICES = Object.freeze({
 });
 const PRICE_OVERRIDE_AGENT_EMAIL = "lukusaalain483@gmail.com";
 const MOMBASA_AGENT_EMAIL = "gisorebarrack5@gmail.com";
+const MOMBASA_GOODS_PRICES = ACCOUNT_GOODS_PRICES[MOMBASA_AGENT_EMAIL];
 // These legacy exemptions are migrated once to an audited database setting.
 const LEGACY_TICKET_SUBMISSION_CUTOFF_EXEMPT_EMAILS = [
   "lukusaalain483@gmail.com",
@@ -102,6 +103,14 @@ function canSetGoodsPrices(agent) {
 async function goodsPricesFor(agent, cataloguePrices = GOODS_PRICES) {
   const email = normalizeEmail(agent?.email);
   const overrides = await goodsPriceOverridesCollection.find({ email }, { projection: { _id: 0, name: 1, price: 1 } }).toArray();
+  if (email === MOMBASA_AGENT_EMAIL) {
+    const mombasaOverrides = Object.fromEntries(
+      overrides
+        .filter((item) => Object.hasOwn(MOMBASA_GOODS_PRICES, item.name))
+        .map((item) => [item.name, Number(item.price)])
+    );
+    return { ...MOMBASA_GOODS_PRICES, ...mombasaOverrides };
+  }
   return Object.fromEntries([...Object.entries(cataloguePrices), ...overrides.map((item) => [item.name, Number(item.price)])]);
 }
 const MAX_PASSWORD_LENGTH = 256;
@@ -2970,11 +2979,9 @@ app.get("/api/admin/goods-catalogue", requireAdmin, async (req, res) => {
     const products = await goodsCatalogueCollection.find({}, { projection: { _id: 0 } }).sort({ name: 1 }).toArray();
     const mombasaOverrides = await goodsPriceOverridesCollection.find({ email: MOMBASA_AGENT_EMAIL }, { projection: { _id: 0, name: 1, price: 1 } }).toArray();
     const mombasaPrices = Object.fromEntries(mombasaOverrides.map((item) => [item.name, item.price]));
-    const standardNames = new Set(products.map((product) => product.name));
-    const mombasaProducts = [
-      ...products.map((product) => ({ name: product.name, price: mombasaPrices[product.name] ?? product.price, active: product.active !== false, standardProduct: true })),
-      ...mombasaOverrides.filter((product) => !standardNames.has(product.name)).map((product) => ({ name: product.name, price: product.price, active: true, standardProduct: false }))
-    ].sort((first, second) => first.name.localeCompare(second.name));
+    const mombasaProducts = Object.entries(MOMBASA_GOODS_PRICES)
+      .map(([name, price]) => ({ name, price: mombasaPrices[name] ?? price }))
+      .sort((first, second) => first.name.localeCompare(second.name));
     return res.json({ products: products.map((product) => ({ ...product, mombasaPrice: mombasaPrices[product.name] ?? null })), mombasaProducts });
   } catch (error) {
     console.error("Goods catalogue lookup failed:", error.message);
@@ -2986,6 +2993,7 @@ app.put("/api/admin/goods-catalogue/:name/mombasa-price", requireAdmin, async (r
   const name = applicationField(req.params.name, 80);
   const price = Number(req.body?.price);
   if (!name || !Number.isFinite(price) || price < 0 || price > 100000000) return res.status(400).json({ error: "Enter a valid non-negative Mombasa price." });
+  if (!Object.hasOwn(MOMBASA_GOODS_PRICES, name)) return res.status(400).json({ error: "This product is not in the fixed Mombasa price list." });
   try {
     await goodsPriceOverridesCollection.updateOne(
       { email: MOMBASA_AGENT_EMAIL, name },
@@ -3435,6 +3443,7 @@ app.post(
     const isAgentPickup = submittedRequestType === "agentPickup" || submittedRequestType === "agent";
     const isAgentTicket = submittedRequestType === "agentTicket";
     const cataloguePrices = await activeGoodsPrices();
+    const effectiveGoodsPrices = await goodsPricesFor(req.agent, cataloguePrices);
 
     const validGoods =
       Array.isArray(goods) &&
@@ -3443,7 +3452,7 @@ app.post(
         item &&
           typeof item.name ===
             "string" &&
-          await isAcceptedGoodName(item.name, cataloguePrices) &&
+          await isAcceptedGoodName(item.name, effectiveGoodsPrices) &&
           (
             typeof item.quantity ===
               "number" ||
@@ -3529,7 +3538,6 @@ app.post(
     if (submissionCutoffError) {
       return res.status(403).json({ error: submissionCutoffError });
     }
-    const effectiveGoodsPrices = await goodsPricesFor(req.agent, cataloguePrices);
     const cleanedGoods = goods.map((item) => {
       const name = item.name.trim();
       const amount = isAgentPickup || !canSetGoodsPrices(req.agent)
@@ -3783,6 +3791,7 @@ app.put(
     const isFieldEmployee = req.requestUserType === "fieldEmployee";
     const allowedType = isFieldEmployee ? "fieldEmployee" : "agentTicket";
     const cataloguePrices = await activeGoodsPrices();
+    const effectiveGoodsPrices = await goodsPricesFor(req.agent, cataloguePrices);
     const { goods, notes } = req.body || {};
     const cleanNotes = applicationField(notes || "", 1000);
     const invalidNotes = (typeof notes !== "undefined" && typeof notes !== "string")
@@ -3790,7 +3799,7 @@ app.put(
     const validGoods = Array.isArray(goods) && goods.length > 0 && (await Promise.all(goods.map(async (item) =>
       item
       && typeof item.name === "string"
-      && await isAcceptedGoodName(item.name, cataloguePrices)
+      && await isAcceptedGoodName(item.name, effectiveGoodsPrices)
       && (typeof item.quantity === "number" || typeof item.quantity === "string")
       && String(item.quantity).trim()
       && Number.isFinite(Number(item.quantity))
@@ -3818,7 +3827,6 @@ app.put(
       return res.status(403).json({ error: submissionCutoffError });
     }
 
-    const effectiveGoodsPrices = await goodsPricesFor(req.agent, cataloguePrices);
     const cleanedGoods = goods.map((item) => {
       const name = item.name.trim();
       const amount = canSetGoodsPrices(req.agent)

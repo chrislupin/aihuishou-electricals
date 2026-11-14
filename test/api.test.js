@@ -243,6 +243,7 @@ test("ticket submissions use the Nairobi weekday and Saturday cutoffs", async ()
   const mombasaAgentCookie = signedSessionCookie("agent_session", { email: mombasaAgent.email, role: "agent", sessionVersion: 0 });
   const fieldCookie = signedSessionCookie("field_employee_session", { email: field.email, role: "fieldEmployee", sessionVersion: 0 });
   const agentTicket = { requestType: "agentTicket", goods: [{ name: "LCDs", quantity: 1, amount: 1 }], notes: "Cutoff test.", idempotencyKey: "agent-cutoff-weekday" };
+  const mombasaTicket = { requestType: "agentTicket", goods: [{ name: "LCD", quantity: 1, amount: 1 }], notes: "Cutoff test.", idempotencyKey: "mombasa-cutoff-exempt-agent" };
   const fieldTicket = { requestType: "fieldEmployee", goods: [{ name: "LCDs", quantity: 1, amount: 1 }], notes: "Cutoff test.", idempotencyKey: "field-cutoff-weekday" };
 
   app.locals.ticketSubmissionTime = new Date("2026-09-21T14:02:00.000Z"); // Monday 5:02 PM Nairobi
@@ -262,7 +263,7 @@ test("ticket submissions use the Nairobi weekday and Saturday cutoffs", async ()
   result = await request("/api/pickup-requests", { method: "POST", headers: { cookie: yvonneCookie, "content-type": "application/json" }, body: JSON.stringify({ ...agentTicket, idempotencyKey: "yvonne-cutoff-exempt-agent" }) });
   assert.equal(result.response.status, 201);
 
-  result = await request("/api/pickup-requests", { method: "POST", headers: { cookie: mombasaAgentCookie, "content-type": "application/json" }, body: JSON.stringify({ ...agentTicket, idempotencyKey: "mombasa-cutoff-exempt-agent" }) });
+  result = await request("/api/pickup-requests", { method: "POST", headers: { cookie: mombasaAgentCookie, "content-type": "application/json" }, body: JSON.stringify(mombasaTicket) });
   assert.equal(result.response.status, 201);
 
   app.locals.ticketSubmissionTime = new Date("2026-09-21T14:01:00.000Z"); // Monday 5:01 PM Nairobi
@@ -798,11 +799,20 @@ test("administrators manage the Mombasa agent's product prices", async () => {
   const adminCookie = await login("/api/admin-login", "admin@example.com", "admin-password", "admin_session");
   const mombasa = await collection("agent_accounts").findOne({ email: "gisorebarrack5@gmail.com" });
   assert.ok(mombasa);
+  let catalogue = await request("/api/admin/goods-catalogue", { headers: { cookie: adminCookie } });
+  assert.equal(catalogue.response.status, 200);
+  assert.equal(catalogue.body.mombasaProducts.some((product) => product.name === "LCDs"), false);
+  assert.equal(catalogue.body.mombasaProducts.find((product) => product.name === "LCD").price, 500);
   let result = await request("/api/admin/goods-catalogue/16GB/mombasa-price", { method: "PUT", headers: { cookie: adminCookie, "content-type": "application/json" }, body: JSON.stringify({ price: 444 }) });
+  assert.equal(result.response.status, 200);
+  result = await request("/api/admin/goods-catalogue/LCDs/mombasa-price", { method: "PUT", headers: { cookie: adminCookie, "content-type": "application/json" }, body: JSON.stringify({ price: 444 }) });
+  assert.equal(result.response.status, 400);
+  result = await request("/api/admin/goods-catalogue/16GB", { method: "PUT", headers: { cookie: adminCookie, "content-type": "application/json" }, body: JSON.stringify({ price: 333, active: false }) });
   assert.equal(result.response.status, 200);
   const mombasaCookie = await login("/api/agent-login", mombasa.email, "mombasa-agent-password", "agent_session");
   result = await request("/api/agent-session", { headers: { cookie: mombasaCookie } });
   assert.equal(result.body.agent.goodsPrices["16GB"], 444);
+  assert.equal(result.body.agent.goodsPrices["LCDs"], undefined);
   app.locals.ticketSubmissionTime = new Date("2026-09-21T09:00:00.000Z");
   result = await request("/api/pickup-requests", { method: "POST", headers: { cookie: mombasaCookie, "content-type": "application/json" }, body: JSON.stringify({ requestType: "agentTicket", goods: [{ name: "16GB", quantity: 2, amount: 1 }], notes: "Mombasa live price.", idempotencyKey: "mombasa-live-price" }) });
   assert.equal(result.response.status, 201);
